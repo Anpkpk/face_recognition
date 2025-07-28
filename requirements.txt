@@ -1,0 +1,11 @@
+opencv-python
+matplotlib
+scikit-learn
+ipython
+cvzone
+supervision
+ultralytics
+torch
+torchvision
+pillow
+inference-sdk
