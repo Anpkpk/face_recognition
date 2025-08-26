@@ -1,99 +1,59 @@
 import os
-import cv2
+import random
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import random
-from ultralytics import YOLO
+import cv2
+import mediapipe as mp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import mediapipe as mp
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
+import torchvision.models as models
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from PIL import Image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-IMG_SIZE = 224
-batch_size = 32
-num_epochs = 20
-lr = 0.005
+IMG_SIZE = 160
+
 
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor()
 ])
 
 
-class SiameseDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-
-        self.classes = sorted(os.listdir(root_dir))
-        self.image_paths = []
-
-        for label in self.classes:
-            class_path = os.path.join(root_dir, label)
-            for img_name in os.listdir(class_path):
-                img_path = os.path.join(class_path, img_name)
-                self.image_paths.append((img_path, label))
-
-        self.label_to_images = {label: [] for label in self.classes}
-        for path, label in self.image_paths:
-            self.label_to_images[label].append(path)
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-
-        anchor_path, anchor_label = self.image_paths[idx]
-        anchor_img = Image.open(anchor_path).convert("RGB")
-
-        positive_candidates = self.label_to_images[anchor_label].copy()
-        positive_candidates.remove(anchor_path)
-        if not positive_candidates:
-            positive_path = anchor_path  
-        else:
-            positive_path = random.choice(positive_candidates)
-        positive_img = Image.open(positive_path).convert("RGB")
-
-        negative_labels = [label for label in self.classes if label != anchor_label]
-        negative_label = random.choice(negative_labels)
-        negative_path = random.choice(self.label_to_images[negative_label])
-        negative_img = Image.open(negative_path).convert("RGB")
-
-        if self.transform:
-            anchor_img = self.transform(anchor_img)
-            positive_img = self.transform(positive_img)
-            negative_img = self.transform(negative_img)
-
-        return anchor_img, positive_img, negative_img
-
-
 class SiameseNet(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_dim=256):
         super(SiameseNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
-        self.pool1 = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.pool2 = nn.MaxPool2d(2, 2)
 
-        self.avgpool = nn.AdaptiveAvgPool2d((4, 4))  
-        self.fc1 = nn.Linear(64 * 4 * 4, 128)
+        mobilenet = models.mobilenet_v3_large(weights="DEFAULT")
+
+        self.feature_extractor = mobilenet.features
+
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        last_channel = mobilenet.classifier[0].in_features
+        self.fc = nn.Linear(last_channel, embedding_dim)
+
         self.dropout = nn.Dropout(0.5)
 
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = self.pool2(F.relu(self.conv2(x)))
+    def forward_once(self, x):
+        x = self.feature_extractor(x)
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.dropout(F.relu(self.fc1(x)))
+        x = torch.flatten(x, 1)
+        x = self.dropout(F.relu(self.fc(x)))
         x = F.normalize(x, p=2, dim=1)
         return x
+
+    def forward(self, anchor, positive, negative):
+        out_anchor = self.forward_once(anchor)
+        out_positive = self.forward_once(positive)
+        out_negative = self.forward_once(negative)
+        return out_anchor, out_positive, out_negative
+
 
 
 class TripletLoss(nn.Module):
@@ -102,33 +62,33 @@ class TripletLoss(nn.Module):
         self.margin = margin
 
     def forward(self, anchor, positive, negative):
-        dist_pos = F.pairwise_distance(anchor, positive, p=2)
-        dist_neg = F.pairwise_distance(anchor, negative, p=2)
+        pos_dist = F.pairwise_distance(anchor, positive, p=2)
+        neg_dist = F.pairwise_distance(anchor, negative, p=2)
 
-        loss = torch.clamp(dist_pos - dist_neg + self.margin, min=0.0)
-        return loss.mean()
+        losses = F.relu(pos_dist - neg_dist + self.margin)
+        return losses.mean()
 
-
-
-dataset = SiameseDataset(root_dir=r"C:\VSCode\Python\face_recognition\dataset\train",
-                         transform=transform)
-
-train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
-
-model = SiameseNet().to(device)
-model.load_state_dict(torch.load(r"C:\VSCode\Python\face_recognition\siamese_model.pth"))
-model.eval()
-
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
 
 def crop_face(image):
-    img = cv2.imread(image)
-
-    mp_face_detection = mp.solutions.face_detection
-    mp_drawing = mp.solutions.drawing_utils
+    if isinstance(image, str):  
+        # Trường hợp: đường dẫn ảnh
+        img = cv2.imread(image)
+        if img is None:
+            raise FileNotFoundError(f"Không thể load ảnh: {image}")
+    elif isinstance(image, Image.Image):
+        # Trường hợp: PIL.Image
+        img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    elif isinstance(image, np.ndarray):
+        # Trường hợp: numpy array (ảnh OpenCV)
+        img = image
+    else:
+        raise TypeError("crop_face chỉ nhận path (str), PIL.Image hoặc numpy.ndarray")
 
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    with mp_face_detection.FaceDetection(model_selection=5, min_detection_confidence=0.8) as face_detection:
+    with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.8) as face_detection:
         results = face_detection.process(img_rgb)
 
         if results.detections:
@@ -141,58 +101,85 @@ def crop_face(image):
                 w = int(bboxC.width * iw)
                 h = int(bboxC.height * ih)
                 x2 = min(x + w, iw)
-                y2 = min(y + h + 15, ih)
+                y2 = min(y + h, ih)
 
                 face_crop = img[y:y2, x:x2]
                 cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
-                
-    return face_crop
+            return Image.fromarray(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+        else:
+            print("⚠️ No face detected in the image.")
+            return None
+    
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = SiameseNet().to(device)
+criterion = TripletLoss(margin=0.2).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 
-reference_paths = []
-for root, dirs, files in os.walk(r"C:\VSCode\Python\face_recognition\dataset\train"):
-    count = 0
-    for file in files:
-        if file.endswith(".png") or file.endswith(".jpg"):
-            reference_paths.append(os.path.join(root, file))
-            count += 1
-            if count >= 5:
+model.load_state_dict(torch.load(r"C:\VSCode\Python\face_recognition\siamese_model_tripletloss.pth",
+                                 map_location=torch.device('cpu')))
+model.eval()
+
+
+reference_paths = {}
+root_dir = r"C:\VSCode\Python\face_recognition\dataset\Original Images\Original Images"
+
+if any(os.path.isdir(os.path.join(root_dir, d)) for d in os.listdir(root_dir)):
+    for root, dirs, files in os.walk(root_dir):
+        for file in files:
+            if file.lower().endswith((".png", ".jpg", ".jpeg")):
+                img_crop = crop_face(os.path.join(root, file))
+                img = transform(img_crop).unsqueeze(0).to(device)
+                if img_crop is not None:
+                    reference_paths[os.path.basename(file)] = model.forward_once(img)
                 break
+else:
+    print("Không tìm thấy thư mục con trong thư mục dataset/data.")
+
 
 def predict_image(img_input, threshold=0.8):
-    if isinstance(img_input, np.ndarray):
-        img = Image.fromarray(img_input).convert('RGB')
-    else:
-        img = Image.open(img_input).convert('RGB')
-
-    img = transform(img).unsqueeze(0).to(device)
-
-    model.eval()
-    with torch.no_grad():
-        embed_anchor = model.forward(img)
+    cropped = transform(img_input).unsqueeze(0).to(device) # transform
 
     distances = []
 
-    count = 0
-    dist = 0
-    for ref_path in reference_paths:
-        ref_img = Image.open(ref_path).convert('RGB')
-        ref_img = transform(ref_img).unsqueeze(0).to(device)
+    with torch.no_grad():
+        embed_test = model.forward_once(cropped)   # embedding ảnh test
 
-        with torch.no_grad():
-            embed_ref = model.forward(ref_img)
+        for ref_path, ref_embedding in reference_paths.items():
 
-        dist += torch.nn.functional.pairwise_distance(embed_anchor, embed_ref).item()
-        count += 1
-        if count % 5 == 0:
-            dist = dist / 5.0
-            distances.append((ref_path, dist))
-            count, dist = 0, 0
+            if ref_embedding is not None:
+                dist = torch.nn.functional.cosine_similarity(embed_test, ref_embedding).item()
 
-    distances.sort(key=lambda x: x[1])
-    name = distances[0][0].split(os.sep)[-2]
-    dist = distances[0][1]
+                file_name = os.path.basename(ref_path)
+                class_name = file_name.rsplit("_", 1)[0]
 
-    return name, dist
+                distances.append((class_name, dist))
+            else:
+                print(f"Skipping reference image due to invalid crop result: {ref_path}")
+
+
+    if not distances:
+        print("Không có reference hợp lệ sau khi crop.")
+        return "unknown", None
+
+    class_dists = {}
+    for cls, dist in distances:
+        class_dists.setdefault(cls, []).append(dist)
+
+    avg_class_dists = {cls: sum(d)/len(d) for cls, d in class_dists.items()}
+    sorted_dists = sorted(avg_class_dists.items(), key=lambda x: x[1], reverse=True)
+    print("Khoảng cách cosin giữa ảnh test và các class:")
+    for cls, d in sorted_dists:
+        print(f"  {cls}: {d:.4f}")
+
+    best_class = max(avg_class_dists, key=avg_class_dists.get)
+    best_dist = avg_class_dists[best_class]
+
+    if best_dist < threshold:
+        return "unknown", best_dist
+
+    return best_class, best_dist
+
 
 
