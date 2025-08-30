@@ -1,35 +1,40 @@
 import os
 import sys
-import numpy as np
 import cv2
 import time
-import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import * 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
 from PIL import Image
 
-import face_recognition as fr
-
+from face_recognition import FaceEngine
 
 
 IMG_SIZE = 160
+
+engine = FaceEngine()
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("My Application")
         self.setGeometry(0, 0, 1500, 700)
-
         self.image_path = None
         self.current_frame = None
         self.registered_dir = None
+        self.need_capture = True
         self.registered = 0
         self.last_capture_time = 0
-        self.capture_delay = 2.0
+        self.capture_delay = 3.0
 
         self.initUI()
+
+        self.instructions = [
+            "Nhìn thẳng",
+            "Quay sang trái",
+            "Quay sang phải"
+        ]
 
         # mở camera
         self.cap = cv2.VideoCapture(0)
@@ -87,7 +92,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(60, 150, 60, 60)
         layout.setSpacing(40)
 
-                # Card chứa nút
+        # Card chứa nút
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
@@ -136,7 +141,7 @@ class MainWindow(QMainWindow):
         self.image_panel.setGeometry(0, 0, 1000, 700)
 
         image_layout = QVBoxLayout(self.image_panel)
-        image_layout.setContentsMargins(30, 30, 30, 30)
+        image_layout.setContentsMargins(10, 10, 10, 10)
         image_layout.setSpacing(25)
 
         # camera
@@ -153,7 +158,7 @@ class MainWindow(QMainWindow):
 
         # kết quả
         self.label_result = QLabel("Kết quả nhận diện")
-        self.label_result.setFixedHeight(45)
+        self.label_result.setFixedHeight(30)
         self.label_result.setAlignment(Qt.AlignCenter)
         self.label_result.setStyleSheet("""
             QLabel {
@@ -162,6 +167,19 @@ class MainWindow(QMainWindow):
                 color: #2980b9;
             }
         """)
+
+        # label register
+        self.label_register = QLabel("")
+        self.label_register.setFixedHeight(30)
+        self.label_register.setAlignment(Qt.AlignCenter)
+        self.label_register.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                font-weight: bold;
+                color: #2980b9;
+            }
+        """)
+                                  
 
         # ảnh crop
         self.image_cropped_label = QLabel()
@@ -177,13 +195,14 @@ class MainWindow(QMainWindow):
 
         image_layout.addWidget(self.image_label)
         image_layout.addWidget(self.label_result)
+        image_layout.addWidget(self.label_register)
         image_layout.addWidget(self.image_cropped_label)
 
     def process_image(self):
         img_rgb = self.current_frame
-        name, dist = fr.predict_image(img_rgb)
+        name, dist = engine.predict_image(img_rgb)
 
-        height, width = img_rgb.size
+        width, height  = img_rgb.size
         bytes_per_line = 3 * width
         q_image = QImage(
             img_rgb.tobytes(),
@@ -223,33 +242,41 @@ class MainWindow(QMainWindow):
             )
             self.registered = 1
         self.photo_step = 0
+        engine.load_dir()
 
     def take_photo(self, frame, x, y, x2, y2):
         face_crop = frame[y:y2, x:x2]
         save_path = os.path.join(self.registered_dir, f"{self.photo_step+1}.jpg")
         cv2.imwrite(save_path, cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR))
 
-        self.instructions = [
-            "Nhìn thẳng",
-            "Quay sang trái",
-            "Quay sang phải",
-            "Ngẩng lên",
-            "Cúi xuống",
-        ]
-        self.label_result.setText(self.instructions[self.photo_step])
+        
+        self.label_register.setText(self.instructions[self.photo_step])
 
-        if self.photo_step < 5:
-            self.label_result.setText(self.instructions[self.photo_step])
-        else:
-            QMessageBox.information(
-                self, "Hoàn tất", "Bạn đã đăng ký thành công 5 ảnh khuôn mặt!"
+        if self.photo_step < 3:
+            self.label_register.setText(self.instructions[self.photo_step])
+
+            h, w, ch = face_crop.shape
+            bytes_per_line = ch * w
+
+            q_image = QImage(face_crop.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(q_image)
+
+            pixmap = pixmap.scaled(
+                self.image_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
             )
-            self.label_result.setText("Đăng ký hoàn tất")
+            self.image_cropped_label.setPixmap(pixmap)
+        if self.photo_step >= 2:
+            QMessageBox.information(
+                self, "Hoàn tất", "Bạn đã đăng ký thành công"
+            )
+            self.label_register.setText("Đăng ký hoàn tất")
             self.registered = 0
 
     # ===================== UPDATE FRAME =====================
     def update_frame(self):
-        with fr.mp_face_detection.FaceDetection(min_detection_confidence=0.8) as face_detection:
+        with engine.mp_face_detection.FaceDetection(min_detection_confidence=0.8) as face_detection:
             ret, frame = self.cap.read()
             if not ret:
                 return
@@ -267,33 +294,83 @@ class MainWindow(QMainWindow):
                     x = max(int(bboxC.xmin * w), 0)
                     y = max(int(bboxC.ymin * h), 0)
                     self.bw = int(bboxC.width * w)
-                    self.bh = int(bboxC.height * h)
+                    self.bh = int(bboxC.height * h) 
                     x2 = min(x + self.bw, w)
-                    y2 = min(y + self.bh, h)
+                    y2 = min(y + self.bh, h) 
+                    
+                    extra_top = int(0.2 * self.bh)
+                    y = max(y - extra_top, 0)  
 
                     cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
 
                     # nhận diện
-                    if (self.bw > IMG_SIZE and self.bh > IMG_SIZE) and (self.registered == 0):
-                        face_crop = frame[y:y2, x:x2]
-                        face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-                        self.current_frame = Image.fromarray(face_crop_rgb)
-                        self.image_path = r"C:\VSCode\Python\face_recognition\dataset\data\temp_face.jpg"
-                        cv2.imwrite(self.image_path, face_crop_rgb)
-                        self.process_image()
+                    if self.need_capture and (self.registered == 0):
+                        if self.bw > IMG_SIZE and self.bh > IMG_SIZE:
+
+                            # init biến cooldown
+                            if not hasattr(self, "last_face"):
+                                self.last_face = None
+                            if not hasattr(self, "last_time"):
+                                self.last_time = 0
+
+                            now = time.time()
+
+                            if self.last_face is None:
+                                capture_new = True
+                            else:
+                                # so sánh vị trí mặt hiện tại và trước đó
+                                lx, ly, lw, lh = self.last_face
+                                dx = abs(x - lx)
+                                dy = abs(y - ly)
+                                dw = abs(self.bw - lw)
+                                dh = abs(self.bh - lh)
+
+                                # khác nhiều thì coi là người mới
+                                different_face = (dx + dy + dw + dh) > 40
+                                cooldown_ok = (now - self.last_time) > 3
+
+                                capture_new = different_face or cooldown_ok
+
+                            if capture_new:
+                                face_crop = frame[y:y2, x:x2]
+                                self.current_frame = Image.fromarray(face_crop)
+                                self.image_path = r"C:\VSCode\Python\face_recognition\dataset\data\temp_face.jpg"
+                                cv2.imwrite(self.image_path, cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR))
+                                self.process_image()
+
+                                # lưu trạng thái
+                                self.last_face = (x, y, self.bw, self.bh)
+                                self.last_time = now
+        
 
                     # đăng ký
                     if self.registered == 1:
-                        if (self.bw >= IMG_SIZE and self.bh >= IMG_SIZE) and (self.photo_step < 5):
+                        if (self.bw > 150 and self.bh > 150) and (self.photo_step <= 3):
                             current_time = time.time()
-                            if current_time - self.last_capture_time > self.capture_delay:
+                            elapsed = current_time - self.last_capture_time
+
+                            if elapsed >= self.capture_delay:
                                 self.take_photo(frame, x, y, x2, y2)
                                 self.photo_step += 1
+                                self.last_capture_time = current_time
+                            else:
+                                remaining = int(self.capture_delay - elapsed + 1)
+                                self.label_register.setText(f"{self.instructions[self.photo_step]}: {remaining} s")
                         else:
-                            self.label_result.setText("Vui lòng di chuyển lại để chụp ảnh.")
+                            self.last_capture_time = time.time()  
+                            self.label_register.setText("Vui lòng di chuyển lại để chụp ảnh.")
+            else:
+                self.last_face = None
 
             qimg = QImage(frame.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
-            self.image_label.setPixmap(QPixmap.fromImage(qimg))
+            pixmap = QPixmap.fromImage(qimg).scaled(
+                self.image_label.size(), 
+                Qt.KeepAspectRatio,           
+                Qt.SmoothTransformation        
+            )
+
+            self.image_label.setPixmap(pixmap)
+            
 
 class RegisterDialog(QDialog):
     def __init__(self, parent=None):
@@ -388,7 +465,6 @@ class RegisterDialog(QDialog):
 
     def get_name(self):
         return getattr(self, "name", "")
-
 
 
 def main():

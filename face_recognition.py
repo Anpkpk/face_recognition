@@ -1,8 +1,5 @@
 import os
-import random
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import cv2
 import mediapipe as mp
 import torch
@@ -10,20 +7,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.models as models
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 from torchvision import transforms
 from PIL import Image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMG_SIZE = 160
 
+model_path = r"C:\VSCode\Python\face_recognition\siamese_model_tripletloss.pth" 
+root_dir = r"C:\VSCode\Python\face_recognition\dataset\data"
+
 
 transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor()
 ])
-
 
 class SiameseNet(nn.Module):
     def __init__(self, embedding_dim=256):
@@ -54,8 +51,6 @@ class SiameseNet(nn.Module):
         out_negative = self.forward_once(negative)
         return out_anchor, out_positive, out_negative
 
-
-
 class TripletLoss(nn.Module):
     def __init__(self, margin=1.0):
         super(TripletLoss, self).__init__()
@@ -68,118 +63,116 @@ class TripletLoss(nn.Module):
         losses = F.relu(pos_dist - neg_dist + self.margin)
         return losses.mean()
 
-mp_face_detection = mp.solutions.face_detection
-mp_drawing = mp.solutions.drawing_utils
 
-def crop_face(image):
-    if isinstance(image, str):  
-        # Trường hợp: đường dẫn ảnh
-        img = cv2.imread(image)
-        if img is None:
-            raise FileNotFoundError(f"Không thể load ảnh: {image}")
-    elif isinstance(image, Image.Image):
-        # Trường hợp: PIL.Image
-        img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    elif isinstance(image, np.ndarray):
-        # Trường hợp: numpy array (ảnh OpenCV)
-        img = image
-    else:
-        raise TypeError("crop_face chỉ nhận path (str), PIL.Image hoặc numpy.ndarray")
+class FaceEngine:
+    def __init__(self):
+        self.mp_face_detection = mp.solutions.face_detection
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.reference_paths = {}
+        self.set_model(model_path)
+        self.load_dir(root_dir)
 
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    def set_model(self, model_path):
+        self.model = SiameseNet().to(device)
+        self.model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        self.model.eval()
 
-    with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.8) as face_detection:
-        results = face_detection.process(img_rgb)
-
-        if results.detections:
-            for detection in results.detections:
-                bboxC = detection.location_data.relative_bounding_box
-                ih, iw, _ = img.shape
-
-                x = max(int(bboxC.xmin * iw), 0)
-                y = max(int(bboxC.ymin * ih) , 0)
-                w = int(bboxC.width * iw)
-                h = int(bboxC.height * ih)
-                x2 = min(x + w, iw)
-                y2 = min(y + h, ih)
-
-                face_crop = img[y:y2, x:x2]
-                cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
-            return Image.fromarray(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+    def crop_face(self, image):
+        if isinstance(image, str):  
+            # Trường hợp: đường dẫn ảnh
+            img = cv2.imread(image)
+            if img is None:
+                raise FileNotFoundError(f"Không thể load ảnh: {image}")
+        elif isinstance(image, Image.Image):
+            # Trường hợp: PIL.Image
+            img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        elif isinstance(image, np.ndarray):
+            # Trường hợp: numpy array (ảnh OpenCV)
+            img = image
         else:
-            print("⚠️ No face detected in the image.")
-            return None
-    
+            raise TypeError("crop_face chỉ nhận path (str), PIL.Image hoặc numpy.ndarray")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = SiameseNet().to(device)
-criterion = TripletLoss(margin=0.2).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.8) as face_detection:
+            results = face_detection.process(img_rgb)
 
-model.load_state_dict(torch.load(r"C:\VSCode\Python\face_recognition\siamese_model_tripletloss.pth",
-                                 map_location=torch.device('cpu')))
-model.eval()
+            if results.detections:
+                for detection in results.detections:
+                    bboxC = detection.location_data.relative_bounding_box
+                    ih, iw, _ = img.shape
 
+                    x = max(int(bboxC.xmin * iw), 0)
+                    y = max(int(bboxC.ymin * ih) , 0)
+                    w = int(bboxC.width * iw)
+                    h = int(bboxC.height * ih)
+                    x2 = min(x + w, iw)
+                    y2 = min(y + h, ih)
 
-reference_paths = {}
-root_dir = r"C:\VSCode\Python\face_recognition\dataset\Original Images\Original Images"
-
-if any(os.path.isdir(os.path.join(root_dir, d)) for d in os.listdir(root_dir)):
-    for root, dirs, files in os.walk(root_dir):
-        for file in files:
-            if file.lower().endswith((".png", ".jpg", ".jpeg")):
-                img_crop = crop_face(os.path.join(root, file))
-                img = transform(img_crop).unsqueeze(0).to(device)
-                if img_crop is not None:
-                    reference_paths[os.path.basename(file)] = model.forward_once(img)
-                break
-else:
-    print("Không tìm thấy thư mục con trong thư mục dataset/data.")
-
-
-def predict_image(img_input, threshold=0.8):
-    cropped = transform(img_input).unsqueeze(0).to(device) # transform
-
-    distances = []
-
-    with torch.no_grad():
-        embed_test = model.forward_once(cropped)   # embedding ảnh test
-
-        for ref_path, ref_embedding in reference_paths.items():
-
-            if ref_embedding is not None:
-                dist = torch.nn.functional.cosine_similarity(embed_test, ref_embedding).item()
-
-                file_name = os.path.basename(ref_path)
-                class_name = file_name.rsplit("_", 1)[0]
-
-                distances.append((class_name, dist))
+                    face_crop = img[y:y2, x:x2]
+                    cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
+                return Image.fromarray(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
             else:
-                print(f"Skipping reference image due to invalid crop result: {ref_path}")
+                print("⚠️ No face detected in the image.")
+                return None
 
+    def load_dir(self, root_dir=root_dir):
+        if any(os.path.isdir(os.path.join(root_dir, d)) for d in os.listdir(root_dir)):
+            for folder in os.listdir(root_dir):
+                folder_path = os.path.join(root_dir, folder)
+                if os.path.isdir(folder_path):
+                    embeddings = []
+                    for file in os.listdir(folder_path):
+                        if file.lower().endswith((".png", ".jpg", ".jpeg")):
+                            img_path = os.path.join(folder_path, file)
+                            img_crop = Image.open(img_path).convert("RGB")
+                            img = transform(img_crop).unsqueeze(0).to(device)
 
-    if not distances:
-        print("Không có reference hợp lệ sau khi crop.")
-        return "unknown", None
+                            with torch.no_grad():
+                                emb = self.model.forward_once(img)
+                            embeddings.append(emb)
 
-    class_dists = {}
-    for cls, dist in distances:
-        class_dists.setdefault(cls, []).append(dist)
+                    if embeddings:
+                        avg_embedding = torch.mean(torch.stack(embeddings), dim=0)
+                        self.reference_paths[folder] = avg_embedding
+        else:
+            print("Không tìm thấy thư mục con trong thư mục dataset/data.")
 
-    avg_class_dists = {cls: sum(d)/len(d) for cls, d in class_dists.items()}
-    sorted_dists = sorted(avg_class_dists.items(), key=lambda x: x[1], reverse=True)
-    print("Khoảng cách cosin giữa ảnh test và các class:")
-    for cls, d in sorted_dists:
-        print(f"  {cls}: {d:.4f}")
+    def predict_image(self, img_input, threshold=0.8):
+        cropped = transform(img_input).unsqueeze(0).to(device) # transform
 
-    best_class = max(avg_class_dists, key=avg_class_dists.get)
-    best_dist = avg_class_dists[best_class]
+        distances = []
 
-    if best_dist < threshold:
-        return "unknown", best_dist
+        with torch.no_grad():
+            embed_test = self.model.forward_once(cropped)   # embedding ảnh test
 
-    return best_class, best_dist
+            for ref_path, ref_embedding in self.reference_paths.items():
 
+                if ref_embedding is not None:
+                    dist = torch.nn.functional.cosine_similarity(embed_test, ref_embedding).item()
+                    class_name = os.path.basename(ref_path)
+                    distances.append((class_name, dist))
+                else:
+                    print(f"Skipping reference image due to invalid crop result: {ref_path}")
 
+        if not distances:
+            print("Không có reference hợp lệ sau khi crop.")
+            return "unknown", None
 
+        class_dists = {}
+        for cls, dist in distances:
+            class_dists.setdefault(cls, []).append(dist)
+
+        avg_class_dists = {cls: sum(d)/len(d) for cls, d in class_dists.items()}
+        sorted_dists = sorted(avg_class_dists.items(), key=lambda x: x[1], reverse=True)
+        print("Khoảng cách cosin giữa ảnh test và các class:")
+        for cls, d in sorted_dists:
+            print(f"  {cls}: {d:.4f}")
+
+        best_class = max(avg_class_dists, key=avg_class_dists.get)
+        best_dist = avg_class_dists[best_class]
+
+        if best_dist < threshold:
+            return "unknown", best_dist
+
+        return best_class, best_dist
