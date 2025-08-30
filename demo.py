@@ -12,6 +12,8 @@ from face_recognition import FaceEngine
 
 
 IMG_SIZE = 160
+REGISTER_DIR = r"C:\VSCode\Python\face_recognition\dataset\data"
+TEMP_IMG = r"C:\VSCode\Python\face_recognition\dataset\data\temp_face.jpg"
 
 engine = FaceEngine()
 
@@ -231,10 +233,7 @@ class MainWindow(QMainWindow):
                 return
 
             # tạo thư mục theo tên
-            self.registered_dir = os.path.join(
-                r"C:\VSCode\Python\face_recognition\dataset\data",
-                name
-            )
+            self.registered_dir = os.path.join(REGISTER_DIR, name)
             os.makedirs(self.registered_dir, exist_ok=True)
 
             QMessageBox.information(
@@ -334,7 +333,7 @@ class MainWindow(QMainWindow):
                             if capture_new:
                                 face_crop = frame[y:y2, x:x2]
                                 self.current_frame = Image.fromarray(face_crop)
-                                self.image_path = r"C:\VSCode\Python\face_recognition\dataset\data\temp_face.jpg"
+                                self.image_path = TEMP_IMG
                                 cv2.imwrite(self.image_path, cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR))
                                 self.process_image()
 
