@@ -9,3 +9,5 @@ torch
 torchvision
 pillow
 inference-sdk
+PyQt5
+mediapipe
