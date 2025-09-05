@@ -15,13 +15,13 @@ IMG_SIZE = 160
 REGISTER_DIR = r"C:\VSCode\Python\face_recognition\dataset\data"
 TEMP_IMG = r"C:\VSCode\Python\face_recognition\dataset\data\temp_face.jpg"
 
-engine = FaceEngine()
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("My Application")
         self.setGeometry(0, 0, 1500, 700)
+        self.engine = FaceEngine()
         self.image_path = None
         self.current_frame = None
         self.registered_dir = None
@@ -38,10 +38,8 @@ class MainWindow(QMainWindow):
             "Quay sang phải"
         ]
 
-        # mở camera
         self.cap = cv2.VideoCapture(0)
 
-        # timer cập nhật frame
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_frame)
         self.timer.start(30)
@@ -182,7 +180,6 @@ class MainWindow(QMainWindow):
             }
         """)
                                   
-
         # ảnh crop
         self.image_cropped_label = QLabel()
         self.image_cropped_label.setFixedHeight(300)
@@ -202,7 +199,7 @@ class MainWindow(QMainWindow):
 
     def process_image(self):
         img_rgb = self.current_frame
-        name, dist = engine.predict_image(img_rgb)
+        name, dist = self.engine.predict_image(img_rgb)
 
         width, height  = img_rgb.size
         bytes_per_line = 3 * width
@@ -241,7 +238,6 @@ class MainWindow(QMainWindow):
             )
             self.registered = 1
         self.photo_step = 0
-        engine.load_dir()
 
     def take_photo(self, frame, x, y, x2, y2):
         face_crop = frame[y:y2, x:x2]
@@ -272,103 +268,96 @@ class MainWindow(QMainWindow):
             )
             self.label_register.setText("Đăng ký hoàn tất")
             self.registered = 0
+            
+            self.engine.save_embeddings_to_txt(r"C:\VSCode\Python\face_recognition\embeded.txt")
+            self.engine.reload()
 
     # ===================== UPDATE FRAME =====================
     def update_frame(self):
-        with engine.mp_face_detection.FaceDetection(min_detection_confidence=0.8) as face_detection:
-            ret, frame = self.cap.read()
-            if not ret:
-                return
 
-            # BGR → RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_detection.process(frame)
+        ret, frame = self.cap.read()
+        if not ret:
+            return
 
-            h, w, ch = frame.shape
-            bytes_per_line = ch * w
+        # BGR → RGB
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.engine.face_detector.process(frame)
 
-            if results.detections:
-                for detection in results.detections:
-                    bboxC = detection.location_data.relative_bounding_box
-                    x = max(int(bboxC.xmin * w), 0)
-                    y = max(int(bboxC.ymin * h), 0)
-                    self.bw = int(bboxC.width * w)
-                    self.bh = int(bboxC.height * h) 
-                    x2 = min(x + self.bw, w)
-                    y2 = min(y + self.bh, h) 
-                    
-                    extra_top = int(0.2 * self.bh)
-                    y = max(y - extra_top, 0)  
+        h, w, ch = frame.shape
+        bytes_per_line = ch * w
 
-                    cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
+        if results.detections:
+            for detection in results.detections:
+                bboxC = detection.location_data.relative_bounding_box
+                x = max(int(bboxC.xmin * w), 0)
+                y = max(int(bboxC.ymin * h), 0)
+                self.bw = int(bboxC.width * w)
+                self.bh = int(bboxC.height * h) 
+                x2 = min(x + self.bw, w)
+                y2 = min(y + self.bh, h) 
+                
+                extra_top = int(0.2 * self.bh)
+                y = max(y - extra_top, 0)  
 
-                    # nhận diện
-                    if self.need_capture and (self.registered == 0):
-                        if self.bw > IMG_SIZE and self.bh > IMG_SIZE:
+                cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
 
-                            # init biến cooldown
-                            if not hasattr(self, "last_face"):
-                                self.last_face = None
-                            if not hasattr(self, "last_time"):
-                                self.last_time = 0
+                if self.need_capture and (self.registered == 0):
+                    if self.bw > IMG_SIZE and self.bh > IMG_SIZE:
 
-                            now = time.time()
+                        if not hasattr(self, "last_face"):
+                            self.last_face = None
+                        if not hasattr(self, "last_time"):
+                            self.last_time = 0
 
-                            if self.last_face is None:
-                                capture_new = True
-                            else:
-                                # so sánh vị trí mặt hiện tại và trước đó
-                                lx, ly, lw, lh = self.last_face
-                                dx = abs(x - lx)
-                                dy = abs(y - ly)
-                                dw = abs(self.bw - lw)
-                                dh = abs(self.bh - lh)
+                        now = time.time()
 
-                                # khác nhiều thì coi là người mới
-                                different_face = (dx + dy + dw + dh) > 40
-                                cooldown_ok = (now - self.last_time) > 3
-
-                                capture_new = different_face or cooldown_ok
-
-                            if capture_new:
-                                face_crop = frame[y:y2, x:x2]
-                                self.current_frame = Image.fromarray(face_crop)
-                                self.image_path = TEMP_IMG
-                                cv2.imwrite(self.image_path, cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR))
-                                self.process_image()
-
-                                # lưu trạng thái
-                                self.last_face = (x, y, self.bw, self.bh)
-                                self.last_time = now
-        
-
-                    # đăng ký
-                    if self.registered == 1:
-                        if (self.bw > 150 and self.bh > 150) and (self.photo_step <= 3):
-                            current_time = time.time()
-                            elapsed = current_time - self.last_capture_time
-
-                            if elapsed >= self.capture_delay:
-                                self.take_photo(frame, x, y, x2, y2)
-                                self.photo_step += 1
-                                self.last_capture_time = current_time
-                            else:
-                                remaining = int(self.capture_delay - elapsed + 1)
-                                self.label_register.setText(f"{self.instructions[self.photo_step]}: {remaining} s")
+                        if self.last_face is None:
+                            capture_new = True
                         else:
-                            self.last_capture_time = time.time()  
-                            self.label_register.setText("Vui lòng di chuyển lại để chụp ảnh.")
-            else:
-                self.last_face = None
+                            cooldown_ok = (now - self.last_time) > 3
+                            capture_new = cooldown_ok
 
-            qimg = QImage(frame.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(qimg).scaled(
-                self.image_label.size(), 
-                Qt.KeepAspectRatio,           
-                Qt.SmoothTransformation        
-            )
+                        if capture_new:
+                            face_crop = frame[y:y2, x:x2]
+                            self.current_frame = Image.fromarray(face_crop)
+                            self.image_path = TEMP_IMG
+                            cv2.imwrite(self.image_path, cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR))
+                            self.process_image()
 
-            self.image_label.setPixmap(pixmap)
+                            self.last_face = (x, y, self.bw, self.bh)
+                            self.last_time = now
+    
+                # đăng ký
+                if self.registered == 1:
+                    if (self.bw > 150 and self.bh > 150) and (self.photo_step <= 3):
+                        current_time = time.time()
+                        elapsed = current_time - self.last_capture_time
+
+                        if elapsed >= self.capture_delay:
+                            self.take_photo(frame, x, y, x2, y2)
+                            self.photo_step += 1
+                            self.last_capture_time = current_time
+                        else:
+                            remaining = int(self.capture_delay - elapsed + 1)
+                            self.label_register.setText(
+                                f"{self.instructions[self.photo_step]}: {remaining} s"
+                            )
+                    else:
+                        self.last_capture_time = time.time()  
+                        self.label_register.setText("Vui lòng di chuyển lại để chụp ảnh.")
+                    self.engine.load_dir()
+                
+        else:
+            self.last_face = None
+
+        qimg = QImage(frame.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimg).scaled(
+            self.image_label.size(), 
+            Qt.KeepAspectRatio,           
+            Qt.SmoothTransformation        
+        )
+
+        self.image_label.setPixmap(pixmap)
             
 
 class RegisterDialog(QDialog):
@@ -395,7 +384,7 @@ class RegisterDialog(QDialog):
                 min-width: 50px;
                 padding: 6px;
                 border-radius: 8px;
-                border: 2px solid black; 
+                border: 1px solid black; 
                 background-color: white;
                 color: black;
             }
@@ -455,7 +444,6 @@ class RegisterDialog(QDialog):
             else:
                 QMessageBox.warning(self, "Lỗi", "Mật khẩu không đúng!")
         else:
-            # kiểm tra tên sau khi đã xác thực mật khẩu
             self.name = self.name_input.text()
             if not self.name:
                 QMessageBox.warning(self, "Lỗi", "Tên không được để trống!")
