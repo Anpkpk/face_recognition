@@ -1,0 +1,56 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.env
+.venv/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+notebooks/
+
+# ==========================
+# Data & Models
+# ==========================
+data/
+!data/README.md          # giữ README.md để mô tả dữ liệu
+
+models/
+!models/README.md        # giữ README.md để mô tả model
+
+outputs/
+*.txt
+*.log
+
+# Temp files
+*.jpg
+*.png
+*.bmp
+
+# ==========================
+# IDE / Editor
+# ==========================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.DS_Store
+Thumbs.db
+
+# ==========================
+# System
+# ==========================
+.DS_Store
+ehthumbs.db
+Icon?
