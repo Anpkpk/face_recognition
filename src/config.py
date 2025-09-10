@@ -9,8 +9,9 @@ IMG_SIZE = 160
 
 # Đường dẫn model & dữ liệu
 MODEL_PATH = r"C:\VSCode\Python\face_recognition\models\siamese_model_tripletloss.pth"
-TEMP_DIR = r"C:\VSCode\Python\face_recognition\data"
+TEMP_DIR = r"C:\VSCode\Python\face_recognition\data\temp_face.jpg"
 REGISTER_DIR = r"C:\VSCode\Python\face_recognition\data\registered"
+EMBEDDED_DIR = r"C:\VSCode\Python\face_recognition\output\embedded.txt"
 
 # Transform ảnh
 TRANSFORM = transforms.Compose([

@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 from PIL import Image
 
-from src.config import DEVICE, MODEL_PATH, REGISTER_DIR, TRANSFORM
+from src.config import DEVICE, MODEL_PATH, REGISTER_DIR, TRANSFORM, EMBEDDED_DIR
 
 
 class SiameseNet(nn.Module):
@@ -139,12 +139,12 @@ class FaceEngine:
                             torch.stack(embeddings), dim=0
                         )
                         self.reference_paths[folder] = avg_embedding
-            self.save_embeddings_to_txt(r"C:\VSCode\Python\face_recognition\embeded.txt")
+            self.save_embeddings_to_txt(EMBEDDED_DIR)
         else:
-            print("Không tìm thấy thư mục con trong thư mục dataset/data.")
+            print("Không tìm thấy thư mục con")
 
     def reload(self):
-        self.reference_paths = self.load_embeddings_from_txt(r"C:\VSCode\Python\face_recognition\embeded.txt")
+        self.reference_paths = self.load_embeddings_from_txt(EMBEDDED_DIR)
 
 
 

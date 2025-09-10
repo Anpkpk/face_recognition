@@ -9,7 +9,7 @@ from PyQt5.QtCore import QTimer
 from PIL import Image
 
 from src.face_recognition import FaceEngine
-from src.config import IMG_SIZE, REGISTER_DIR, TEMP_DIR
+from src.config import IMG_SIZE, REGISTER_DIR, TEMP_DIR, EMBEDDED_DIR
 
 
 class MainWindow(QMainWindow):
@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
             self.label_register.setText("Đăng ký hoàn tất")
             self.registered = 0
             
-            self.engine.save_embeddings_to_txt(r"C:\VSCode\Python\face_recognition\embeded.txt")
+            self.engine.save_embeddings_to_txt(EMBEDDED_DIR)
             self.engine.reload()
 
     # ===================== UPDATE FRAME =====================
@@ -449,13 +449,3 @@ class RegisterDialog(QDialog):
 
     def get_name(self):
         return getattr(self, "name", "")
-
-
-def main():
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
-    
-if __name__ == "__main__":
-    main()
