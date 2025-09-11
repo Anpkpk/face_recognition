@@ -4,7 +4,6 @@ Các module chính gồm:
 - config: cấu hình chung (device, path, transform...)
 - engine: core logic (FaceEngine)
 - gui: giao diện (PyQt5)
-- utils: hàm tiện ích
 - dataset: custom dataset
 """
 

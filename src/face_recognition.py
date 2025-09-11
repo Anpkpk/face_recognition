@@ -68,7 +68,7 @@ class FaceEngine:
     def set_model(self, model_path):
         self.model = SiameseNet().to(DEVICE)
         self.model.load_state_dict(
-            torch.load(model_path, map_location=torch.device("cpu"))
+            torch.load(model_path, map_location=torch.device(DEVICE))
         )
         self.model.eval()
 
