@@ -1,5 +1,6 @@
 import torch
 from torchvision import transforms
+from pathlib import Path
 
 # Thiết bị
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -8,10 +9,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMG_SIZE = 160
 
 # Đường dẫn model & dữ liệu
-MODEL_PATH = r"C:\VSCode\Python\face_recognition\models\siamese_model_tripletloss.pth"
-TEMP_DIR = r"C:\VSCode\Python\face_recognition\data\temp_face.jpg"
-REGISTER_DIR = r"C:\VSCode\Python\face_recognition\data\registered"
-EMBEDDED_DIR = r"C:\VSCode\Python\face_recognition\output\embedded.txt"
+BASE_DIR = Path(__file__).resolve().parent
+
+PROJECT_DIR = BASE_DIR.parent
+
+MODEL_PATH = PROJECT_DIR / "models" / "siamese_model_tripletloss.pth"
+TEMP_DIR = PROJECT_DIR / "data" / "temp_face.jpg"
+REGISTER_DIR = PROJECT_DIR / "data" / "registered"
+EMBEDDED_DIR = PROJECT_DIR / "output" / "embedded.txt"
 
 # Transform ảnh
 TRANSFORM = transforms.Compose([
