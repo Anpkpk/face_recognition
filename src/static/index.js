@@ -24,14 +24,19 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
   // Hàm gửi ảnh lên server (nhận diện)
+  let lastCropTime = 0;   // thời gian lần cuối crop
+
   function doPredict() {
+    const now = Date.now();
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
+    canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
+
     const formData = new FormData();
     formData.append("image", canvas.toDataURL("image/jpeg"));
+
     fetch('/predict', {
       method: 'POST',
       body: formData
@@ -39,13 +44,40 @@ window.addEventListener('DOMContentLoaded', () => {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          croppedImage.src = data.crop;
+          if (data.video) {
+            const img = new Image();
+            img.onload = () => {
+              // vẽ lại frame đầy đủ
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+              // vẽ bounding box
+              ctx.strokeStyle = "lime";
+              ctx.lineWidth = 2;
+              ctx.strokeRect(data.x, data.y, data.width, data.height);
+            };
+            img.src = data.video;
+            labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
+          }
+
+          // crop chỉ update mỗi 3 giây
+          if (now - lastCropTime > 3000) {
+            croppedImage.src = data.crop;
+            lastCropTime = now;
+          }
         } else {
-          alert(data.message);
+          console.warn("Detect thất bại:", data.message);
         }
       })
-      .catch(err => console.error(err));
+      .catch(err => console.error("Lỗi khi gọi /predict:", err))
+      .finally(() => {
+        requestAnimationFrame(doPredict);
+      });
   }
+
+
+
+
 
   // Auto predict mỗi 2s
   setInterval(doPredict, 2000);

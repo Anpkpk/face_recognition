@@ -275,6 +275,7 @@ class FaceEngine:
         pil_img = Image.open(BytesIO(img_data)).convert("RGB")
         img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
+        self.face_crop = None
         # Tạo mới FaceDetection mỗi lần
         with mp.solutions.face_detection.FaceDetection(
             model_selection=0,
@@ -297,12 +298,23 @@ class FaceEngine:
                     y = max(y - extra_top, 0)  
                     cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
 
-        face_crop = img[y:y2, x:x2]
+                    self.face_crop = img[y:y2, x:x2]
 
+                    coords = (x, y, w, h)
+
+                    if self.face_crop is None or self.face_crop.size == 0:
+                        continue
+                    break
+        face_pil = Image.fromarray(self.face_crop)            
+        best_class, best_dist = self.predict_image(face_pil)
+        
         # Encode face crop ra base64
-        _, buffer = cv2.imencode('.jpg', face_crop)
-        face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
-        return face_b64
+        _, buffer1 = cv2.imencode('.jpg', self.face_crop)
+        face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer1).decode("utf-8")
+
+        _, buffer2 = cv2.imencode('.jpg', img)
+        img = "data:image/jpeg;base64," + base64.b64encode(buffer2).decode("utf-8")
+        return face_b64, img, coords, best_class, best_dist
 
 
     def predict_image(self, img_input, threshold=0.8):
@@ -362,16 +374,30 @@ app = Flask(__name__)
 def index():
     return render_template("index.html")
 
+last_predict_time = 0   # lưu thời gian lần gọi gần nhất (epoch time)
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    image_b64 = request.form["image"]   # khác request.get_json()
+    global last_predict_time
+    now = time.time()
 
-    face_b64 = engine.detect_and_crop(image_b64)
+    if now - last_predict_time > 3:
+        image_b64 = request.form["image"]
+        face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64)
 
-    if face_b64:
-        return jsonify(success=True, crop=face_b64)
-    else:
-        return jsonify(success=False, message="Không tìm thấy khuôn mặt đủ lớn")
+        if face_b64 and coords:
+            x, y, w, h = coords
+            return jsonify(
+                success=True,
+                crop=face_b64,
+                video=vid,
+                x=x, y=y, width=w, height=h,
+                label=label,
+                distance=dist
+            )
+        else:
+            return jsonify(success=False, message="Không tìm thấy khuôn mặt đủ lớn")
+    last_predict_time = now
 
 
 
