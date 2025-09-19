@@ -69,18 +69,11 @@ window.addEventListener('DOMContentLoaded', () => {
           console.warn("Detect thất bại:", data.message);
         }
       })
-      .catch(err => console.error("Lỗi khi gọi /predict:", err))
-      .finally(() => {
-        requestAnimationFrame(doPredict);
-      });
+      .catch(err => console.error("Lỗi khi gọi /predict:", err));
   }
 
-
-
-
-
   // Auto predict mỗi 2s
-  setInterval(doPredict, 2000);
+  setInterval(doPredict, 3000);
 
   // Nút Register
   registerBtn.addEventListener('click', () => {

@@ -277,34 +277,34 @@ class FaceEngine:
 
         self.face_crop = None
         # Tạo mới FaceDetection mỗi lần
-        with mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=0.5
-        ) as face_detector:
+        # with mp.solutions.face_detection.FaceDetection(
+        #     model_selection=0,
+        #     min_detection_confidence=0.5
+        # ) as face_detector:
 
-            results = face_detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        results = self.face_detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-            if results.detections:
-                for detection in results.detections:
-                    bboxC = detection.location_data.relative_bounding_box
-                    ih, iw, _ = img.shape
-                    x = max(int(bboxC.xmin * iw), 0)
-                    y = max(int(bboxC.ymin * ih), 0)
-                    w = int(bboxC.width * iw)
-                    h = int(bboxC.height * ih)
-                    x2 = min(x + w, iw)
-                    y2 = min(y + h, ih)
-                    extra_top = int(0.2 * h)
-                    y = max(y - extra_top, 0)  
-                    cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
+        if results.detections:
+            for detection in results.detections:
+                bboxC = detection.location_data.relative_bounding_box
+                ih, iw, _ = img.shape
+                x = max(int(bboxC.xmin * iw), 0)
+                y = max(int(bboxC.ymin * ih), 0)
+                w = int(bboxC.width * iw)
+                h = int(bboxC.height * ih)
+                x2 = min(x + w, iw)
+                y2 = min(y + h, ih)
+                extra_top = int(0.2 * h)
+                y = max(y - extra_top, 0)  
+                cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
 
-                    self.face_crop = img[y:y2, x:x2]
+                self.face_crop = img[y:y2, x:x2]
 
-                    coords = (x, y, w, h)
+                coords = (x, y, w, h)
 
-                    if self.face_crop is None or self.face_crop.size == 0:
-                        continue
-                    break
+                if self.face_crop is None or self.face_crop.size == 0:
+                    continue
+                break
         face_pil = Image.fromarray(self.face_crop)            
         best_class, best_dist = self.predict_image(face_pil)
         
@@ -413,7 +413,6 @@ def register():
     engine.register(name, image_b64)
 
     return jsonify(success=True, name=name)
-
 
 
 if __name__ == '__main__':
