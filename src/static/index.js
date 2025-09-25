@@ -12,8 +12,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const nameSection = document.getElementById('nameSection');
   const cancelBtn = document.getElementById('cancelBtn');
 
+
+  const overlay = document.getElementById('overlay');
+  const overlayCtx = overlay.getContext('2d');
+
+  video.addEventListener('loadedmetadata', () => {
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+  });
+
   // Bật camera
-  navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+  navigator.mediaDevices.getUserMedia({ video: { width: 400, height: 300 } })
     .then(stream => {
       video.srcObject = stream;
       video.play();
@@ -47,21 +56,32 @@ window.addEventListener('DOMContentLoaded', () => {
           if (data.video) {
             const img = new Image();
             img.onload = () => {
-              // vẽ lại frame đầy đủ
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const x = data.x;
+              const y = data.y;
+              const w = data.width;
+              const h = data.height;
 
-              // vẽ bounding box
-              ctx.strokeStyle = "lime";
-              ctx.lineWidth = 2;
-              ctx.strokeRect(data.x, data.y, data.width, data.height);
+              // xoá bbox cũ
+              overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+              // vẽ bbox mới
+              overlayCtx.strokeStyle = "lime";
+              overlayCtx.lineWidth = 2;
+              overlayCtx.strokeRect(x, y, w, h);
+              console.log("Server bbox:", data.x, data.y, data.width, data.height);
+              console.log("Frame size:", data.frame_width, data.frame_height);
+              console.log("Overlay size:", overlay.width, overlay.height);
+              console.log("Scale:", scaleX, scaleY);
+
             };
-            img.src = data.video;
-            labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
+            img.src = data.video
+
+            labelResult.textContent =
+              `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
           }
 
           // crop chỉ update mỗi 3 giây
-          if (now - lastCropTime > 3000) {
+          if (now - lastCropTime > 2000) {
             croppedImage.src = data.crop;
             lastCropTime = now;
           }
@@ -72,8 +92,9 @@ window.addEventListener('DOMContentLoaded', () => {
       .catch(err => console.error("Lỗi khi gọi /predict:", err));
   }
 
-  // Auto predict mỗi 2s
-  setInterval(doPredict, 3000);
+
+  // Auto predict mỗi 3s
+  setInterval(doPredict, 500);
 
   // Nút Register
   registerBtn.addEventListener('click', () => {

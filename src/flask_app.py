@@ -28,6 +28,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import mediapipe as mp
 from pathlib import Path
+from matplotlib import pyplot as plt
 
 # --------------------------- Simple config ---------------------------
 BASE_DIR = Path(__file__).resolve().parent
@@ -276,11 +277,7 @@ class FaceEngine:
         img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
         self.face_crop = None
-        # Tạo mới FaceDetection mỗi lần
-        # with mp.solutions.face_detection.FaceDetection(
-        #     model_selection=0,
-        #     min_detection_confidence=0.5
-        # ) as face_detector:
+
 
         results = self.face_detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
@@ -300,20 +297,23 @@ class FaceEngine:
 
                 self.face_crop = img[y:y2, x:x2]
 
-                coords = (x, y, w, h)
+                coords = (x, y, w, h, iw, ih)
 
                 if self.face_crop is None or self.face_crop.size == 0:
                     continue
                 break
         face_pil = Image.fromarray(self.face_crop)            
         best_class, best_dist = self.predict_image(face_pil)
-        
+        cv2.imwrite("Output.jpg", img)
+
         # Encode face crop ra base64
         _, buffer1 = cv2.imencode('.jpg', self.face_crop)
         face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer1).decode("utf-8")
 
         _, buffer2 = cv2.imencode('.jpg', img)
         img = "data:image/jpeg;base64," + base64.b64encode(buffer2).decode("utf-8")
+
+
         return face_b64, img, coords, best_class, best_dist
 
 
@@ -374,24 +374,25 @@ app = Flask(__name__)
 def index():
     return render_template("index.html")
 
-last_predict_time = 0   # lưu thời gian lần gọi gần nhất (epoch time)
+last_predict_time = 0 
 
 @app.route("/predict", methods=["POST"])
 def predict():
     global last_predict_time
     now = time.time()
 
-    if now - last_predict_time > 3:
+    if now - last_predict_time > 0:
         image_b64 = request.form["image"]
         face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64)
-
+        
         if face_b64 and coords:
-            x, y, w, h = coords
+            x, y, w, h, iw, ih = coords
             return jsonify(
                 success=True,
                 crop=face_b64,
                 video=vid,
                 x=x, y=y, width=w, height=h,
+                frame_width=iw, frame_height=ih, 
                 label=label,
                 distance=dist
             )
@@ -403,7 +404,7 @@ def predict():
 
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.get_json()   # ✅ vì client gửi JSON
+    data = request.get_json() 
     if not data or "image" not in data or "name" not in data:
         return jsonify(success=False, message="Thiếu dữ liệu"), 400
     
