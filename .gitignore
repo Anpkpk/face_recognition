@@ -26,14 +26,14 @@ notebooks/
 # models/
 # !models/README.md        # giữ README.md để mô tả model
 
-outputs/
-*.txt
-*.log
+# outputs/
+# *.txt
+# *.log
 
-# Temp files
-*.jpg
-*.png
-*.bmp
+# # Temp files
+# *.jpg
+# *.png
+# *.bmp
 
 # ==========================
 # IDE / Editor
