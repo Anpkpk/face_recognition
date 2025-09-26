@@ -32,12 +32,36 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    position: relative;
   }
   #cameraView video, #croppedView img {
     max-height: 100%;
     max-width: 100%;
     border-radius: 20px;
+    display: block;
   }
+  #cameraView {
+    position: relative;
+    display: inline-block; 
+    justify-content: center; /* căn giữa ngang */
+    align-items: center;     /* căn giữa dọc */
+  }
+
+  #cameraView video {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 20px;
+  }
+
+  #overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 20px;
+    pointer-events: none;
+  }
+
   #labelResult, #labelRegister {
     font-size: 18px;
     font-weight: bold;
@@ -136,7 +160,7 @@
 <div id="leftPanel">
   <div id="cameraView">
     <video id="video" autoplay muted playsinline></video>
-    <canvas id="overlay" style="position: absolute; top: 22px; left: 106px;"></canvas>
+    <canvas id="overlay"></canvas>
   </div>
   <div id="labelResult">Kết quả nhận diện</div>
   <div id="labelRegister"></div>

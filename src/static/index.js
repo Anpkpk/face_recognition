@@ -12,7 +12,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const nameSection = document.getElementById('nameSection');
   const cancelBtn = document.getElementById('cancelBtn');
 
-
   const overlay = document.getElementById('overlay');
   const overlayCtx = overlay.getContext('2d');
 
@@ -32,8 +31,9 @@ window.addEventListener('DOMContentLoaded', () => {
       alert(`Không thể mở camera. Vui lòng kiểm tra quyền truy cập và thử lại.\nChi tiết: ${err.message}`);
     });
 
-  // Hàm gửi ảnh lên server (nhận diện)
-  let lastCropTime = 0;   // thời gian lần cuối crop
+  // Biến lưu bbox mới nhất từ predict
+  let lastBBox = null;
+  let lastCropTime = 0;
 
   function doPredict() {
     const now = Date.now();
@@ -61,6 +61,9 @@ window.addEventListener('DOMContentLoaded', () => {
               const w = data.width;
               const h = data.height;
 
+              // lưu lại bbox cho register dùng
+              lastBBox = { width: w, height: h };
+
               // xoá bbox cũ
               overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
@@ -68,37 +71,33 @@ window.addEventListener('DOMContentLoaded', () => {
               overlayCtx.strokeStyle = "lime";
               overlayCtx.lineWidth = 2;
               overlayCtx.strokeRect(x, y, w, h);
-              console.log("Server bbox:", data.x, data.y, data.width, data.height);
-              console.log("Frame size:", data.frame_width, data.frame_height);
-              console.log("Overlay size:", overlay.width, overlay.height);
-              console.log("Scale:", scaleX, scaleY);
 
+              console.log("Server bbox:", w, h);
             };
-            img.src = data.video
+            img.src = data.video;
 
             labelResult.textContent =
               `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
           }
 
-          // crop chỉ update mỗi 3 giây
+          // crop chỉ update mỗi 2s
           if (now - lastCropTime > 2000) {
             croppedImage.src = data.crop;
             lastCropTime = now;
           }
         } else {
           console.warn("Detect thất bại:", data.message);
+          lastBBox = null; // reset nếu detect fail
         }
       })
       .catch(err => console.error("Lỗi khi gọi /predict:", err));
   }
 
-
-  // Auto predict mỗi 3s
+  // Auto predict
   setInterval(doPredict, 500);
 
   // Nút Register
   registerBtn.addEventListener('click', () => {
-    // reset dialog
     passwordInput.value = "";
     nameInput.value = "";
     passwordSection.style.display = "block";
@@ -137,27 +136,58 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    let countdown = 3;
+    let timer;
 
-    fetch('/register', {
-      method: 'POST',
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name,
-        image: canvas.toDataURL('image/jpeg')
-      })
-    })
-      .then(res => res.json())
-      .then(data => {
-        labelRegister.textContent = "Đã đăng ký: " + data.name;
-        registerDialog.style.display = "none";
-        nameInput.value = "";
-        passwordInput.value = "";
-      })
-      .catch(err => console.error(err));
+    function startCountdown() {
+      clearInterval(timer);
+      countdown = 3;
+      labelResult.textContent = `Chụp ảnh sau ${countdown}...`;
+
+      timer = setInterval(() => {
+        const minSize = 160;
+
+        if (!lastBBox || lastBBox.width < minSize || lastBBox.height < minSize) {
+          // Nếu bbox không đủ lớn thì reset countdown
+          countdown = 3;
+          labelResult.textContent = `Kích thước mặt chưa đủ. Chờ ${countdown}...`;
+          return;
+        }
+
+        countdown--;
+        if (countdown > 0) {
+          labelResult.textContent = `Chụp ảnh sau ${countdown}...`;
+        } else {
+          clearInterval(timer);
+
+          // Chụp ảnh khi đủ điều kiện
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0);
+
+          fetch('/register', {
+            method: 'POST',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: name,
+              image: canvas.toDataURL('image/jpeg')
+            })
+          })
+            .then(res => res.json())
+            .then(data => {
+              labelRegister.textContent = "Đã đăng ký: " + data.name;
+              labelResult.textContent = "Đăng ký thành công!";
+              registerDialog.style.display = "none";
+              nameInput.value = "";
+              passwordInput.value = "";
+            })
+            .catch(err => console.error(err));
+        }
+      }, 1000);
+    }
+
+    startCountdown();
   });
 });
