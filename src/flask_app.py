@@ -101,7 +101,7 @@ class FaceEngine:
             min_detection_confidence=0.8
         )   
         self.save_dir = REGISTER_DIR
-        os.makedirs(REGISTER_DIR, exist_ok=True)
+        os.makedirs(self.save_dir, exist_ok=True)
 
         # Biến điều khiển
         self.registered = 0          # 0 = chưa đăng ký, 1 = đang đăng ký
@@ -138,11 +138,7 @@ class FaceEngine:
         print(f"[INFO] Bắt đầu đăng ký cho: {name}")
 
     def register(self, frame, x, y, x2, y2):
-        """
-        Xử lý việc chụp ảnh khuôn mặt trong quá trình đăng ký.
-        frame: ảnh gốc (BGR)
-        (x, y, x2, y2): toạ độ khuôn mặt
-        """
+
         if self.registered == 1:
             bw = x2 - x
             bh = y2 - y
@@ -168,13 +164,31 @@ class FaceEngine:
                 return "Đăng ký hoàn tất!"
         return None
 
-    def take_photo(self, frame, x, y, x2, y2):
-        """Cắt và lưu ảnh khuôn mặt"""
-        face_crop = frame[y:y2, x:x2]
-        save_path = os.path.join(self.save_dir, self.current_name)
-        filename = os.path.join(save_path, f"{self.photo_step+1}.jpg")
+    def take_photo(self, frame, name, x=None, y=None, x2=None, y2=None):
+        if isinstance(frame, Image.Image):
+            frame = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
+
+        if x is not None and y is not None and x2 is not None and y2 is not None:
+            face_crop = frame[y:y2, x:x2]
+        else:
+            face_crop = frame
+
+        save_path = os.path.join(self.save_dir, name)
+        os.makedirs(save_path, exist_ok=True)
+        filename = os.path.join(save_path, f"{name}1.jpg")
         cv2.imwrite(filename, face_crop)
-        print(f"[INFO] Lưu ảnh: {filename}")
+
+        success = cv2.imwrite(filename, face_crop)
+        print(f"[DEBUG] save_path={save_path}")
+        print(f"[DEBUG] filename={filename}")
+        print(f"[DEBUG] frame.shape={frame.shape if isinstance(frame, np.ndarray) else type(frame)}")
+        print(f"[DEBUG] success={success}")
+
+        if success:
+            print(f"[INFO] Lưu ảnh: {filename}")
+        else:
+            print("[ERROR] Không lưu được ảnh!")
+            print(f"[INFO] Lưu ảnh: {filename}")
 
     def crop_face(self, image):
         if isinstance(image, str):  # path
@@ -205,6 +219,8 @@ class FaceEngine:
                 h = int(bboxC.height * ih)
                 x2 = min(x + w, iw)
                 y2 = min(y + h, ih)
+                extra_top = int(0.2 * h)
+                y = max(y - extra_top, 0)
 
                 face_crop = img[y:y2, x:x2]
                 cv2.rectangle(
@@ -293,11 +309,13 @@ class FaceEngine:
                 y2 = min(y + h, ih)
                 extra_top = int(0.2 * h)
                 y = max(y - extra_top, 0)  
+                h = max(h + extra_top, 0)
+
                 cv2.rectangle(img, (x, y), (x2, y2), (0, 255, 0), 2)
 
                 self.face_crop = img[y:y2, x:x2]
-
-                coords = (x, y, w, h, iw, ih)
+            
+                coords = (x, y, w, h)
 
                 if self.face_crop is None or self.face_crop.size == 0:
                     continue
@@ -315,6 +333,12 @@ class FaceEngine:
 
 
         return face_b64, img, coords, best_class, best_dist
+
+    def convert_b64_to_pil(self, image_b64):
+        img_data = base64.b64decode(image_b64)
+        # Mở bằng PIL
+        pil_img = Image.open(BytesIO(img_data)).convert("RGB")
+        return pil_img
 
 
     def predict_image(self, img_input, threshold=0.8):
@@ -386,13 +410,12 @@ def predict():
         face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64)
         
         if face_b64 and coords:
-            x, y, w, h, iw, ih = coords
+            x, y, w, h = coords
             return jsonify(
                 success=True,
                 crop=face_b64,
                 video=vid,
                 x=x, y=y, width=w, height=h,
-                frame_width=iw, frame_height=ih, 
                 label=label,
                 distance=dist
             )
@@ -411,7 +434,19 @@ def register():
     name = data["name"]
     image_b64 = data["image"]
 
-    engine.register(name, image_b64)
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[1]
+
+    image_reg = engine.convert_b64_to_pil(image_b64)
+    image_cv2 = cv2.cvtColor(np.array(image_reg), cv2.COLOR_RGB2BGR)
+    cv2.imwrite("pil_convert.jpg", image_cv2)
+    
+    face_crop = engine.crop_face(image_reg)
+    face_crop_cv2 = cv2.cvtColor(np.array(face_crop), cv2.COLOR_RGB2BGR)
+    cv2.imwrite("face_cropped.jpg", face_crop_cv2)
+    
+    engine.take_photo(face_crop, name)
+
 
     return jsonify(success=True, name=name)
 

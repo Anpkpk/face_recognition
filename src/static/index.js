@@ -122,6 +122,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (password === "1") {
         passwordSection.style.display = "none";
         nameSection.classList.remove("hidden");
+        passwordSection.style.display = "none";
         nameInput.focus();
       } else {
         alert("Sai mật khẩu!");
@@ -135,28 +136,28 @@ window.addEventListener('DOMContentLoaded', () => {
       alert("Nhập tên trước khi đăng ký!");
       return;
     }
-
+    
     let countdown = 3;
     let timer;
 
     function startCountdown() {
       clearInterval(timer);
       countdown = 3;
-      labelResult.textContent = `Chụp ảnh sau ${countdown}...`;
+      labelRegister.textContent = `Chụp ảnh sau ${countdown}...`;
 
       timer = setInterval(() => {
-        const minSize = 160;
+        const minSize = 136;
 
         if (!lastBBox || lastBBox.width < minSize || lastBBox.height < minSize) {
           // Nếu bbox không đủ lớn thì reset countdown
           countdown = 3;
-          labelResult.textContent = `Kích thước mặt chưa đủ. Chờ ${countdown}...`;
+          labelRegister.textContent = `Kích thước mặt chưa đủ. Chờ ${countdown}...`;
           return;
         }
 
         countdown--;
         if (countdown > 0) {
-          labelResult.textContent = `Chụp ảnh sau ${countdown}...`;
+          labelRegister.textContent = `Chụp ảnh sau ${countdown}...`;
         } else {
           clearInterval(timer);
 
@@ -178,7 +179,6 @@ window.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
               labelRegister.textContent = "Đã đăng ký: " + data.name;
-              labelResult.textContent = "Đăng ký thành công!";
               registerDialog.style.display = "none";
               nameInput.value = "";
               passwordInput.value = "";
