@@ -87,9 +87,13 @@ window.addEventListener('DOMContentLoaded', () => {
             croppedImage.src = data.crop;
             lastCropTime = now;
           }
-        } else {
+        }
+        else if (data.label === "No face") {
+          labelResult.textContent = `${data.label}`;
+        }
+        else {
           console.warn("Detect thất bại:", data.message);
-          lastBBox = null; // reset nếu detect fail
+          lastBBox = null;
         }
       })
       .catch(err => console.error("Lỗi khi gọi /predict:", err));
@@ -184,6 +188,10 @@ window.addEventListener('DOMContentLoaded', () => {
               registerDialog.style.display = "none";
               nameInput.value = "";
               passwordInput.value = "";
+
+              setTimeout(() => {
+                labelRegister.textContent = "";
+              }, 2000);
             })
             .catch(err => console.error(err));
         }

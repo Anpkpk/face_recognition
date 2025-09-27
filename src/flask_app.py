@@ -283,9 +283,13 @@ class FaceEngine:
 
     def detect_and_crop(self, image_b64):
         # Decode base64 -> numpy
-        img_data = base64.b64decode(image_b64.split(',')[1])
-        pil_img = Image.open(BytesIO(img_data)).convert("RGB")
-        img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        try:
+            image_data = base64.b64decode(image_b64)
+            np_arr = np.frombuffer(image_data, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        except Exception as e:
+            print("Lỗi giải mã ảnh:", e)
+            return None, None, None, "No face", None
 
         self.face_crop = None
 
@@ -315,6 +319,10 @@ class FaceEngine:
                 if self.face_crop is None or self.face_crop.size == 0:
                     continue
                 break
+        
+        if self.face_crop is None:
+            return None, None, None, "No face", None
+        
         face_pil = Image.fromarray(self.face_crop)            
         best_class, best_dist = self.predict_image(face_pil)
 
@@ -402,7 +410,9 @@ def predict():
     if now - last_predict_time > 0:
         image_b64 = request.form["image"]
         face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64)
-        
+        if label == "No face":
+            return jsonify(success=False, label="No face")        
+
         if face_b64 and coords:
             x, y, w, h = coords
             return jsonify(
