@@ -75,9 +75,11 @@ window.addEventListener('DOMContentLoaded', () => {
               console.log("Server bbox:", w, h);
             };
             img.src = data.video;
-
-            labelResult.textContent =
-              `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
+            if (data.label === "Unknown") {
+              labelResult.textContent = `Name: ${data.label}`;
+            } else {
+              labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
+            }
           }
 
           // crop chỉ update mỗi 2s

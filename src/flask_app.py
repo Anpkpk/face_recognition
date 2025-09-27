@@ -378,7 +378,7 @@ class FaceEngine:
         best_dist = avg_class_dists[best_class]
 
         if best_dist < threshold:
-            return "unknown", best_dist
+            return "Unknown", best_dist
 
         return best_class, best_dist
 
