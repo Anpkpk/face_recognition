@@ -179,16 +179,11 @@ class FaceEngine:
         cv2.imwrite(filename, face_crop)
 
         success = cv2.imwrite(filename, face_crop)
-        print(f"[DEBUG] save_path={save_path}")
-        print(f"[DEBUG] filename={filename}")
-        print(f"[DEBUG] frame.shape={frame.shape if isinstance(frame, np.ndarray) else type(frame)}")
-        print(f"[DEBUG] success={success}")
 
         if success:
             print(f"[INFO] Lưu ảnh: {filename}")
-        else:
-            print("[ERROR] Không lưu được ảnh!")
-            print(f"[INFO] Lưu ảnh: {filename}")
+            self.save_embeddings_to_txt(EMBEDDED_DIR)
+            self.reload()
 
     def crop_face(self, image):
         if isinstance(image, str):  # path
@@ -322,7 +317,6 @@ class FaceEngine:
                 break
         face_pil = Image.fromarray(self.face_crop)            
         best_class, best_dist = self.predict_image(face_pil)
-        cv2.imwrite("Output.jpg", img)
 
         # Encode face crop ra base64
         _, buffer1 = cv2.imencode('.jpg', self.face_crop)
@@ -438,15 +432,10 @@ def register():
         image_b64 = image_b64.split(",")[1]
 
     image_reg = engine.convert_b64_to_pil(image_b64)
-    image_cv2 = cv2.cvtColor(np.array(image_reg), cv2.COLOR_RGB2BGR)
-    cv2.imwrite("pil_convert.jpg", image_cv2)
-    
     face_crop = engine.crop_face(image_reg)
-    face_crop_cv2 = cv2.cvtColor(np.array(face_crop), cv2.COLOR_RGB2BGR)
-    cv2.imwrite("face_cropped.jpg", face_crop_cv2)
-    
     engine.take_photo(face_crop, name)
 
+    engine.load_dir()
 
     return jsonify(success=True, name=name)
 
