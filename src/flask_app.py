@@ -35,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 PROJECT_DIR = BASE_DIR.parent
 
-MODEL_PATH = PROJECT_DIR / "models" / "siamese_model_tripletloss.pth"
+MODEL_PATH = PROJECT_DIR / "models" / "siamese_model_tripletloss_.pth"
 TEMP_DIR = PROJECT_DIR / "data" / "temp_face.jpg"
 REGISTER_DIR = PROJECT_DIR / "data" / "registered"
 EMBEDDED_DIR = PROJECT_DIR / "output" / "embedded.txt"
@@ -284,9 +284,9 @@ class FaceEngine:
     def detect_and_crop(self, image_b64):
         # Decode base64 -> numpy
         try:
-            image_data = base64.b64decode(image_b64)
-            np_arr = np.frombuffer(image_data, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            img_data = base64.b64decode(image_b64.split(',')[1])
+            pil_img = Image.open(BytesIO(img_data)).convert("RGB")
+            img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         except Exception as e:
             print("Lỗi giải mã ảnh:", e)
             return None, None, None, "No face", None
@@ -338,6 +338,8 @@ class FaceEngine:
 
     def convert_b64_to_pil(self, image_b64):
         img_data = base64.b64decode(image_b64)
+        if "," in img_data:
+            img_data = image_b64.split(",")[1]
         # Mở bằng PIL
         pil_img = Image.open(BytesIO(img_data)).convert("RGB")
         return pil_img
@@ -437,9 +439,6 @@ def register():
     
     name = data["name"]
     image_b64 = data["image"]
-
-    if "," in image_b64:
-        image_b64 = image_b64.split(",")[1]
 
     image_reg = engine.convert_b64_to_pil(image_b64)
     face_crop = engine.crop_face(image_reg)

@@ -1,6 +1,7 @@
 import torch
 from torchvision import transforms
 from pathlib import Path
+import os
 
 # Thiết bị
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

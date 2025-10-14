@@ -61,18 +61,15 @@ window.addEventListener('DOMContentLoaded', () => {
               const w = data.width;
               const h = data.height;
 
-              // lưu lại bbox cho register dùng
-              lastBBox = { width: w, height: h };
+            lastBBox = { width: w, height: h };
 
-              // xoá bbox cũ
-              overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-              // vẽ bbox mới
-              overlayCtx.strokeStyle = "lime";
-              overlayCtx.lineWidth = 2;
-              overlayCtx.strokeRect(x, y, w, h);
+            // vẽ bbox mới
+            overlayCtx.strokeStyle = "lime";
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeRect(x, y, w, h);
 
-              console.log("Server bbox:", w, h);
             };
             img.src = data.video;
             if (data.label === "Unknown") {
