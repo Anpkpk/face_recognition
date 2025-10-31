@@ -12,12 +12,12 @@ Open http://127.0.0.1:5000/ in your browser.
 
 Note: This file embeds the FaceEngine and minimal config so you don't need project structure.
 """
+import os
+from io import BytesIO
+from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
-import os
 import base64
-from PIL import Image
-from io import BytesIO
 import numpy as np
 import cv2
 import time
@@ -27,28 +27,9 @@ import torch.nn.functional as F
 import torchvision.models as models
 import torchvision.transforms as transforms
 import mediapipe as mp
-from pathlib import Path
-from matplotlib import pyplot as plt
+from PIL import Image
 
-# --------------------------- Simple config ---------------------------
-BASE_DIR = Path(__file__).resolve().parent
-
-PROJECT_DIR = BASE_DIR.parent
-
-MODEL_PATH = PROJECT_DIR / "models" / "siamese_model_tripletloss_.pth"
-TEMP_DIR = PROJECT_DIR / "data" / "temp_face.jpg"
-REGISTER_DIR = PROJECT_DIR / "data" / "registered"
-EMBEDDED_DIR = PROJECT_DIR / "output" / "embedded.txt"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IMG_SIZE = 160
-TEMP_DIR = os.path.join(BASE_DIR, "temp.jpg")
-os.makedirs(REGISTER_DIR, exist_ok=True)
-
-# A minimal transform similar to your original TRANSFORM
-TRANSFORM = transforms.Compose([
-    transforms.Resize((IMG_SIZE, IMG_SIZE)),
-    transforms.ToTensor(),
-])
+import config
 
 # --------------------------- Model classes ---------------------------
 class SiameseNet(nn.Module):
@@ -100,69 +81,19 @@ class FaceEngine:
             model_selection=0,
             min_detection_confidence=0.8
         )   
-        self.save_dir = REGISTER_DIR
+        self.save_dir = config.REGISTER_DIR
         os.makedirs(self.save_dir, exist_ok=True)
 
-        # Biến điều khiển
-        self.registered = 0          # 0 = chưa đăng ký, 1 = đang đăng ký
-        self.photo_step = 0          # số ảnh đã chụp
-        self.capture_delay = 3       # delay giữa 2 lần chụp (giây)
-        self.last_capture_time = 0   # thời điểm chụp cuối
-        self.current_name = None     # tên đang đăng ký
-
-        # Thông báo hướng dẫn
-        self.instructions = [
-            "Nhìn thẳng vào camera",
-            "Quay mặt sang trái",
-            "Quay mặt sang phải"
-        ]
-
-        self.set_model(MODEL_PATH)
-        self.load_dir(REGISTER_DIR)
+        self.set_model(config.MODEL_PATH)
+        self.load_dir(config.REGISTER_DIR)
 
     def set_model(self, model_path):
-        self.model = SiameseNet().to(DEVICE)
+        self.model = SiameseNet().to(config.DEVICE)
         self.model.load_state_dict(
-            torch.load(model_path, map_location=torch.device(DEVICE))
+            torch.load(model_path, map_location=torch.device(config.DEVICE))
         )
         self.model.eval()
-    def start_register(self, name):
-        """Bắt đầu đăng ký khuôn mặt mới"""
-        self.registered = 1
-        self.photo_step = 0
-        self.current_name = name
-        self.last_capture_time = time.time()
 
-        save_path = os.path.join(self.save_dir, name)
-        os.makedirs(save_path, exist_ok=True)
-        print(f"[INFO] Bắt đầu đăng ký cho: {name}")
-
-    def register(self, frame, x, y, x2, y2):
-
-        if self.registered == 1:
-            bw = x2 - x
-            bh = y2 - y
-            if (bw > 150 and bh > 150) and (self.photo_step < 3):
-                current_time = time.time()
-                elapsed = current_time - self.last_capture_time
-
-                if elapsed >= self.capture_delay:
-                    self.take_photo(frame, x, y, x2, y2)
-                    self.photo_step += 1
-                    self.last_capture_time = current_time
-                else:
-                    remaining = int(self.capture_delay - elapsed + 1)
-                    return f"{self.instructions[self.photo_step]}: {remaining} s"
-            else:
-                self.last_capture_time = time.time()
-                return "Vui lòng di chuyển lại để chụp ảnh."
-
-            if self.photo_step >= 3:
-                self.registered = 0
-                self.current_name = None
-                self.load_dir()  # load lại dataset
-                return "Đăng ký hoàn tất!"
-        return None
 
     def take_photo(self, frame, name, x=None, y=None, x2=None, y2=None):
         if isinstance(frame, Image.Image):
@@ -182,7 +113,7 @@ class FaceEngine:
 
         if success:
             print(f"[INFO] Lưu ảnh: {filename}")
-            self.save_embeddings_to_txt(EMBEDDED_DIR)
+            self.save_embeddings_to_txt(config.EMBEDDED_DIR)
             self.reload()
 
     def crop_face(self, image):
@@ -229,7 +160,7 @@ class FaceEngine:
         print("No face detected in the image.")
         return None
 
-    def load_dir(self, root_dir=REGISTER_DIR):
+    def load_dir(self, root_dir=config.REGISTER_DIR):
         self.reference_paths.clear()
 
         if any(os.path.isdir(os.path.join(root_dir, d))
@@ -243,7 +174,7 @@ class FaceEngine:
                         if file.lower().endswith((".png", ".jpg", ".jpeg")):
                             img_path = os.path.join(folder_path, file)
                             img_crop = Image.open(img_path).convert("RGB")
-                            img = TRANSFORM(img_crop).unsqueeze(0).to(DEVICE)
+                            img = config.TRANSFORM(img_crop).unsqueeze(0).to(config.DEVICE)
 
                             with torch.no_grad():
                                 emb = self.model.forward_once(img).cpu()
@@ -254,12 +185,12 @@ class FaceEngine:
                             torch.stack(embeddings), dim=0
                         )
                         self.reference_paths[folder] = avg_embedding
-            self.save_embeddings_to_txt(EMBEDDED_DIR)
+            self.save_embeddings_to_txt(config.EMBEDDED_DIR)
         else:
             print("Không tìm thấy thư mục con")
 
     def reload(self):
-        self.reference_paths = self.load_embeddings_from_txt(EMBEDDED_DIR)
+        self.reference_paths = self.load_embeddings_from_txt(config.EMBEDDED_DIR)
 
     def load_embeddings_from_txt(self, EMBEDDED_DIR):
         reference_paths = {}
@@ -344,9 +275,8 @@ class FaceEngine:
         pil_img = Image.open(BytesIO(img_data)).convert("RGB")
         return pil_img
 
-
     def predict_image(self, img_input, threshold=0.8):
-        cropped = TRANSFORM(img_input).unsqueeze(0).to(DEVICE)
+        cropped = config.TRANSFORM(img_input).unsqueeze(0).to(config.DEVICE)
 
         distances = []
         with torch.no_grad():
