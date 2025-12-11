@@ -15,12 +15,19 @@ window.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('overlay');
   const overlayCtx = overlay.getContext('2d');
 
+  // 🎯 Canvas dùng cố định cho capture
+  const captureCanvas = document.createElement('canvas');
+  const captureCtx = captureCanvas.getContext('2d');
+
+  // Khi video load metadata → đặt size cho canvas
   video.addEventListener('loadedmetadata', () => {
     overlay.width = video.videoWidth;
     overlay.height = video.videoHeight;
+    captureCanvas.width = video.videoWidth;
+    captureCanvas.height = video.videoHeight;
   });
 
-  // Bật camera
+  // Mở camera
   navigator.mediaDevices.getUserMedia({ video: { width: 400, height: 300 } })
     .then(stream => {
       video.srcObject = stream;
@@ -31,47 +38,58 @@ window.addEventListener('DOMContentLoaded', () => {
       alert(`Không thể mở camera. Vui lòng kiểm tra quyền truy cập và thử lại.\nChi tiết: ${err.message}`);
     });
 
-  // Biến lưu bbox mới nhất từ predict
   let lastBBox = null;
   let lastCropTime = 0;
 
-  function doPredict() {
-    const now = Date.now();
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    const ctx = canvas.getContext('2d');
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
+  // Chống chồng request → tăng FPS
+  let isBusy = false;
 
-    const formData = new FormData();
-    formData.append("image", canvas.toDataURL("image/jpeg"));
+  async function doPredict() {
+    if (isBusy) {
+      requestAnimationFrame(doPredict);
+      return;
+    }
+    isBusy = true;
 
-    fetch('/predict', {
-      method: 'POST',
-      body: formData
-    })
-      .then(res => res.json())
-      .then(data => {
+    // Chụp frame vào canvas cố định
+    captureCtx.drawImage(video, 0, 0);
+
+    // Chuyển canvas sang Blob → nhỏ + nhanh
+    captureCanvas.toBlob(async blob => {
+      const formData = new FormData();
+      formData.append("image", blob, "frame.jpg");
+
+      try {
+        const res = await fetch('/predict', {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+
         if (data.success) {
           if (data.video) {
-            const img = new Image();
-            img.onload = () => {
-              const x = data.x;
-              const y = data.y;
-              const w = data.width;
-              const h = data.height;
+            const x = data.x;
+            const y = data.y;
+            const w = data.width;
+            const h = data.height;
 
-            lastBBox = { width: w, height: h };
+            // Chỉ vẽ lại khi bbox thay đổi → giảm load
+            if (
+              !lastBBox ||
+              lastBBox.x !== x ||
+              lastBBox.y !== y ||
+              lastBBox.w !== w ||
+              lastBBox.h !== h
+            ) {
+              overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+              overlayCtx.strokeStyle = "lime";
+              overlayCtx.lineWidth = 2;
+              overlayCtx.strokeRect(x, y, w, h);
+            }
 
-            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+            lastBBox = { x, y, w, h };
 
-            // vẽ bbox mới
-            overlayCtx.strokeStyle = "lime";
-            overlayCtx.lineWidth = 2;
-            overlayCtx.strokeRect(x, y, w, h);
-
-            };
-            img.src = data.video;
             if (data.label === "Unknown") {
               labelResult.textContent = `Name: ${data.label}`;
             } else {
@@ -79,7 +97,8 @@ window.addEventListener('DOMContentLoaded', () => {
             }
           }
 
-          // crop chỉ update mỗi 2s
+          // Crop ảnh mỗi 2s
+          const now = Date.now();
           if (now - lastCropTime > 2000) {
             croppedImage.src = data.crop;
             lastCropTime = now;
@@ -87,45 +106,41 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         else if (data.label === "No face") {
           labelResult.textContent = `${data.label}`;
-        }
-        else {
-          console.warn("Detect thất bại:", data.message);
           lastBBox = null;
         }
-      })
-      .catch(err => console.error("Lỗi khi gọi /predict:", err));
+      } catch (err) {
+        console.error("Lỗi khi gọi /predict:", err);
+      }
+
+      isBusy = false;
+      requestAnimationFrame(doPredict);  // gọi predict tiếp
+    }, "image/jpeg", 0.7); // giảm chất lượng nhẹ để tăng tốc
   }
 
-  // Auto predict
-  setInterval(doPredict, 500);
+  requestAnimationFrame(doPredict);
 
-  // Nút Register
+  // ==== Register giữ nguyên logic CỦA ANH ====
   registerBtn.addEventListener('click', () => {
     passwordInput.value = "";
     nameInput.value = "";
     passwordSection.style.display = "block";
     nameSection.classList.add("hidden");
-
     registerDialog.style.display = "block";
     passwordInput.focus();
   });
 
-  // Nút Cancel
   cancelBtn.addEventListener('click', () => {
     registerDialog.style.display = "none";
     passwordInput.value = "";
     nameInput.value = "";
   });
 
-  // Nút OK (hai bước)
   submitRegister.addEventListener('click', () => {
-    // Nếu đang ở bước mật khẩu
     if (nameSection.classList.contains("hidden")) {
       const password = passwordInput.value.trim();
       if (password === "1") {
         passwordSection.style.display = "none";
         nameSection.classList.remove("hidden");
-        passwordSection.style.display = "none";
         nameInput.focus();
       } else {
         alert("Sai mật khẩu!");
@@ -133,16 +148,14 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Nếu đang ở bước nhập tên
     const name = nameInput.value.trim();
     if (!name) {
       alert("Nhập tên trước khi đăng ký!");
       return;
     }
-    
+
     registerDialog.style.display = "none";
 
-    // Reset fields
     passwordInput.value = "";
     nameInput.value = "";
 
@@ -157,8 +170,7 @@ window.addEventListener('DOMContentLoaded', () => {
       timer = setInterval(() => {
         const minSize = 136;
 
-        if (!lastBBox || lastBBox.width < minSize || lastBBox.height < minSize) {
-          // Nếu bbox không đủ lớn thì reset countdown
+        if (!lastBBox || lastBBox.w < minSize || lastBBox.h < minSize) {
           countdown = 3;
           labelRegister.textContent = `Kích thước mặt chưa đủ. Chờ ${countdown}...`;
           return;
@@ -170,11 +182,10 @@ window.addEventListener('DOMContentLoaded', () => {
         } else {
           clearInterval(timer);
 
-          // Chụp ảnh khi đủ điều kiện
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
+          const regCanvas = document.createElement('canvas');
+          regCanvas.width = video.videoWidth;
+          regCanvas.height = video.videoHeight;
+          const ctx = regCanvas.getContext('2d');
           ctx.drawImage(video, 0, 0);
 
           fetch('/register', {
@@ -182,21 +193,13 @@ window.addEventListener('DOMContentLoaded', () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: name,
-              image: canvas.toDataURL('image/jpeg')
+              image: regCanvas.toDataURL('image/jpeg')
             })
           })
             .then(res => res.json())
             .then(data => {
               labelRegister.textContent = "Đã đăng ký: " + data.name;
-              registerDialog.style.display = "none";
-              
-              nameInput.value = "";
-              passwordInput.value = "";
-
-              setTimeout(() => {
-                labelRegister.textContent = "";
-                labelRegister.style.display = "none";
-              }, 2000);
+              setTimeout(() => labelRegister.textContent = "", 2000);
             })
             .catch(err => console.error(err));
         }
@@ -206,3 +209,4 @@ window.addEventListener('DOMContentLoaded', () => {
     startCountdown();
   });
 });
+

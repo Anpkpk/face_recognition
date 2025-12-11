@@ -6,7 +6,7 @@
 <title>My Application - Face Recognition</title>
 <style>
   body {
-    margin: 0; 
+    margin: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f4f6f9;
     color: #2c3e50;
@@ -40,29 +40,26 @@
     border-radius: 20px;
     display: block;
   }
-
   #cameraView {
     position: relative;
     display: flex;
-    justify-content: center;
-    align-items: center;
+    justify-content: center; /* căn giữa ngang */
+    align-items: center;     /* căn giữa dọc */
   }
-
   #cameraView video {
     display: block;
     max-width: 100%;
     max-height: 100%;
     border-radius: 20px;
   }
-
   #overlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    border-radius: 20px;
     pointer-events: none;
   }
-
   #labelResult, #labelRegister {
     font-size: 18px;
     font-weight: bold;
@@ -107,7 +104,6 @@
   button:active {
     background-color: #2ecc71;
   }
-
   /* Register dialog styles */
   #registerDialog {
     position: fixed;
@@ -157,7 +153,6 @@
 </style>
 </head>
 <body>
-
 <div id="leftPanel">
   <div id="cameraView">
     <video id="video" autoplay muted playsinline></video>
@@ -169,13 +164,11 @@
     <img id="croppedImage" style="width:200px; height:200px; object-fit:cover; border:1px solid #ccc;" alt="Ảnh crop"/>
   </div>
 </div>
-
 <div id="rightPanel">
   <div class="card">
     <button id="registerButton">Register</button>
   </div>
 </div>
-
 <!-- Register Dialog -->
 <div id="registerDialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
   <h2 id="dialogTitle">Register</h2>
@@ -192,7 +185,6 @@
     <button id="okBtn">OK</button>
   </div>
 </div>
-
 <script src="{{ url_for('static', filename='index.js') }}"></script>
 </body>
 </html>

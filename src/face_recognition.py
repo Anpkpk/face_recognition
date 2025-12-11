@@ -216,7 +216,3 @@ class FaceEngine:
             return "unknown", best_dist
 
         return best_class, best_dist
-    
-
-
-

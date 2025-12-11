@@ -267,13 +267,17 @@ class FaceEngine:
 
         return face_b64, img, coords, best_class, best_dist
 
-    def convert_b64_to_pil(self, image_b64):
-        img_data = base64.b64decode(image_b64)
+    def convert_b64_to_pil(self, img_data):
+        if isinstance(img_data, bytes):
+            img_data = img_data.decode("utf-8")
+
         if "," in img_data:
-            img_data = image_b64.split(",")[1]
-        # Mở bằng PIL
-        pil_img = Image.open(BytesIO(img_data)).convert("RGB")
-        return pil_img
+            img_data = img_data.split(",")[1]
+
+        img_bytes = base64.b64decode(img_data)
+        img = Image.open(BytesIO(img_bytes)).convert("RGB")
+        return img
+
 
     def predict_image(self, img_input, threshold=0.8):
         cropped = config.TRANSFORM(img_input).unsqueeze(0).to(config.DEVICE)
@@ -330,7 +334,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template("index.html")
+    return render_template("index.html") # index.html
 
 last_predict_time = 0 
 
