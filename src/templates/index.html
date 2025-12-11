@@ -8,8 +8,8 @@
   body {
     margin: 0; 
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f4f6f9;
-    color: #2c3e50;
+    background: #0b0015;
+    color: #cfc8ff;
     display: flex;
     height: 100vh;
     overflow: hidden;
@@ -25,7 +25,7 @@
     gap: 25px;
   }
   #cameraView, #croppedView {
-    background: white;
+    background:#12001f;
     border-radius: 20px;
     border: 2px solid #e0e0e0;
     height: 300px;
@@ -38,10 +38,13 @@
     max-height: 100%;
     max-width: 100%;
     border-radius: 20px;
+    border: 1px solid rgba(140, 80, 255, 0.4);
     display: block;
   }
 
   #cameraView {
+    background: #12001f;
+    border-radius: 25px;
     position: relative;
     display: flex;
     justify-content: center;
@@ -66,47 +69,58 @@
   #labelResult, #labelRegister {
     font-size: 18px;
     font-weight: bold;
-    color: #2980b9;
+    color: #b889ff;
     height: 30px;
     line-height: 30px;
     text-align: center;
   }
   #rightPanel {
     flex: 1;
-    background-color: #ecf0f1;
-    border-left: 2px solid #dcdcdc;
+    background: #140020;
+    border-left: 2px solid rgba(100, 60, 160, 0.35);
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
     align-items: center;
     padding-top: 150px;
+    box-shadow: inset 0 0 25px rgba(80, 20, 140, 0.4);
   }
   .card {
-    background-color: white;
+    background: #1b022d;
     border-radius: 18px;
-    border: 1px solid #dcdcdc;
+    padding: 40px 20px;
     padding: 40px 20px;
     width: 80%;
     text-align: center;
+    box-shadow:
+      12px 12px 30px #0d0015,
+      -12px -12px 30px #26003e;
+    border: 1px solid rgba(180, 130, 255, 0.2);
   }
   button {
-    background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+    background: linear-gradient(135deg, #7a32ff, #b35bff);
     color: white;
     font-size: 16px;
     font-weight: bold;
-    border-radius: 12px;
-    padding: 10px;
+    border: none;
+    border-radius: 16px;
+    padding: 14px;
     width: 100%;
     border: none;
     cursor: pointer;
-    transition: background 0.3s ease;
+    box-shadow:
+      0 10px 25px rgba(150, 80, 255, 0.4),
+      inset 0 -5px 15px rgba(0, 0, 0, 0.4);
+
+    transition: 0.25s ease;
   }
   button:hover {
-    background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%);
+    transform: translateY(-3px);
+    box-shadow:
+      0 15px 35px rgba(150, 80, 255, 0.6),
+      inset 0 -5px 15px rgba(0, 0, 0, 0.5);
   }
-  button:active {
-    background-color: #2ecc71;
-  }
+
 
   /* Register dialog styles */
   #registerDialog {
@@ -114,14 +128,24 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #f8f9fa;
-    border-radius: 12px;
+    background: #1a0424;
+    color: #e4d3ff;
+    border: 1px solid rgba(180, 130, 255, 0.4);
+    border-radius: 16px;
     padding: 30px 20px;
     width: 350px;
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
     display: none;
+    box-shadow: 0 15px 35px rgba(120, 60, 200, 0.6);
+    z-index: 9999;
+    animation: popIn 0.25s ease;
     flex-direction: column;
   }
+  @keyframes popIn {
+    from { opacity: 0; transform: translate(-50%, -60%) scale(0.8); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+
   #registerDialog label {
     font-size: 14px;
     color: #333;
@@ -129,6 +153,8 @@
   }
   #registerDialog input[type="text"], #registerDialog input[type="password"] {
     padding: 8px;
+    background: #2a0f3a;
+    color: #e4d3ff;
     border: 1px solid #ccc;
     border-radius: 10px;
     width: 100%;
@@ -141,7 +167,7 @@
     gap: 10px;
   }
   #registerDialog button {
-    background: white;
+    background: #2a0f3a;
     color: black;
     border: 1px solid black;
     padding: 6px 12px;
