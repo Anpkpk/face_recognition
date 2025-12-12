@@ -148,7 +148,7 @@
 
   #registerDialog label {
     font-size: 14px;
-    color: #333;
+    color: #f8f8f8;
     margin-bottom: 5px;
   }
   #registerDialog input[type="text"], #registerDialog input[type="password"] {
@@ -168,8 +168,8 @@
   }
   #registerDialog button {
     background: #2a0f3a;
-    color: black;
-    border: 1px solid black;
+    color: rgb(190, 190, 190);
+    border: 1px solid rgb(190, 190, 190);
     padding: 6px 12px;
     border-radius: 8px;
     width: auto;
@@ -206,11 +206,15 @@
 <div id="registerDialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
   <h2 id="dialogTitle">Register</h2>
   <div id="passwordSection">
-    <label for="passwordInput">Mật khẩu:</label>
+    <label for="passwordInput" style="display:block; margin-bottom:10px;">
+      Mật khẩu:
+    </label>
     <input type="password" id="passwordInput" placeholder="Nhập mật khẩu..." autocomplete="off" />
   </div>
   <div id="nameSection" class="hidden">
-    <label for="nameInput">Tên:</label>
+    <label for="nameInput" style="display:block; margin-bottom:10px;">
+      Tên:
+    </label>
     <input type="text" id="nameInput" placeholder="Nhập tên..." autocomplete="off" />
   </div>
   <div id="registerDialogButtons">
