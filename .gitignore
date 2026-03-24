@@ -25,7 +25,7 @@ data/
 !data/README.md          # giữ README.md để mô tả dữ liệu
 
 # models/
-!models/       # giữ README.md để mô tả model
+!models/      
 
 # outputs/
 # *.txt

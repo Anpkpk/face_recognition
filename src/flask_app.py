@@ -292,10 +292,12 @@ class FaceEngine:
             
         print(f"Đã lưu FAISS index vào {self.index_path}")
 
-    def detect_and_crop(self, image_b64):
+    def detect_and_crop(self, image_b64, need_crop=False):
         # Decode base64 -> PIL
         try:
-            img_data = base64.b64decode(image_b64.split(',')[1])
+            # Xử lý an toàn hơn trường hợp b64 có hoặc không có prefix 'data:image/jpeg;base64,'
+            b64_data = image_b64.split(',')[1] if ',' in image_b64 else image_b64
+            img_data = base64.b64decode(b64_data)
             pil_img = Image.open(BytesIO(img_data)).convert("RGB")
         except Exception as e:
             print("Lỗi giải mã ảnh:", e)
@@ -323,21 +325,20 @@ class FaceEngine:
         # ---- predict using FAISS ----
         best_class, best_dist = self.predict_image(face_pil)
 
-        # ---- Encode face crop ----
-        face_np = cv2.cvtColor(np.array(face_pil), cv2.COLOR_RGB2BGR)
-        _, buffer1 = cv2.imencode(".jpg", face_np)
-        face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer1).decode("utf-8")
+        # ---- TỐI ƯU 1: Chỉ Encode face crop khi Frontend yêu cầu (need_crop = True) ----
+        face_b64 = None
+        if need_crop:
+            face_np = cv2.cvtColor(np.array(face_pil), cv2.COLOR_RGB2BGR)
+            # Nén nhẹ lại ảnh crop một chút (chất lượng 80%) để gửi nhanh hơn
+            _, buffer1 = cv2.imencode(".jpg", face_np, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer1).decode("utf-8")
 
-        # ---- Draw bbox lên ảnh gốc ----
-        img_np = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-        cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        # Vẽ tên lên ảnh
-        cv2.putText(img_np, f"{best_class} ({best_dist:.2f})", (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        # ---- TỐI ƯU 2: Bỏ hoàn toàn việc vẽ bbox lên ảnh gốc bằng OpenCV ----
+        # Việc gửi lại nguyên khung hình video cho frontend là thủ phạm chính gây lag.
+        # Ta gán img = None vì frontend đã tự lấy tọa độ `coords` để vẽ rồi.
+        img = None
 
-        _, buffer2 = cv2.imencode(".jpg", img_np)
-        img = "data:image/jpeg;base64," + base64.b64encode(buffer2).decode("utf-8")
-
+        # Vẫn return 5 biến để không làm hỏng logic unpack ở Flask Route của bạn
         return face_b64, img, coords, best_class, best_dist
 
     def convert_b64_to_pil(self, img_data):
@@ -397,30 +398,36 @@ def index():
 
 last_predict_time = 0 
 
+# Xóa bỏ biến global last_predict_time vì nó không giải quyết được xung đột đa luồng trong Flask
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    global last_predict_time
-    now = time.time()
+    image_b64 = request.form["image"]
+    # Nhận biến need_crop từ frontend (mặc định là False nếu không có)
+    need_crop = request.form.get("need_crop") == 'true'
 
-    if now - last_predict_time > 0: # Bỏ debounce hoặc giữ tùy ý
-        image_b64 = request.form["image"]
-        face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64)
-        if label == "No face":
-            return jsonify(success=False, label="No face")        
+    # Truyền need_crop vào hàm
+    face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64, need_crop=need_crop)
 
-        if face_b64 and coords:
-            x, y, w, h = coords
-            return jsonify( 
-                success=True,
-                crop=face_b64,
-                video=vid,
-                x=x, y=y, width=w, height=h,
-                label=label,
-                distance=dist
-            )
-        else:
-            return jsonify(success=False, message="Không tìm thấy khuôn mặt đủ lớn")
-    last_predict_time = now
+    if label == "No face":
+        return jsonify(success=False, label="No face")        
+
+    if coords:
+        x, y, w, h = coords
+        response = {
+            "success": True,
+            "x": x, "y": y, "width": w, "height": h,
+            "label": label,
+            "distance": float(dist) if dist else 0.0
+        }
+        
+        # Chỉ nhét base64 của ảnh cắt vào cục JSON nếu có
+        if face_b64:
+            response["crop"] = face_b64
+            
+        return jsonify(response)
+    else:
+        return jsonify(success=False, message="Không tìm thấy khuôn mặt đủ lớn")
 
 @app.route("/register", methods=["POST"])
 def register():

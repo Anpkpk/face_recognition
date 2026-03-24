@@ -32,19 +32,32 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
   // Biến lưu bbox mới nhất từ predict
+  // ... (Phần setup camera giữ nguyên)
+
   let lastBBox = null;
   let lastCropTime = 0;
+  let isPredicting = false; // Cờ kiểm tra xem có đang gửi request không
 
   function doPredict() {
+    if (isPredicting) return;
+    isPredicting = true;
+
     const now = Date.now();
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    const ctx = canvas.getContext('2d');
+    // Mẹo: Bạn có thể scale nhỏ canvas width/height ở đây (ví dụ 320x240) 
+    // để model AI chạy nhanh hơn nếu AI của bạn hỗ trợ ảnh nhỏ.
+    canvas.width = video.videoWidth; 
     canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
 
     const formData = new FormData();
-    formData.append("image", canvas.toDataURL("image/jpeg"));
+    // Nén JPEG xuống 70% chất lượng để gửi qua HTTP siêu nhanh
+    formData.append("image", canvas.toDataURL("image/jpeg", 0.7)); 
+
+    // Kiểm tra xem đã đến lúc cần lấy ảnh crop chưa (2s một lần)
+    const needCrop = (now - lastCropTime > 2000);
+    formData.append("need_crop", needCrop);
 
     fetch('/predict', {
       method: 'POST',
@@ -53,52 +66,48 @@ window.addEventListener('DOMContentLoaded', () => {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          if (data.video) {
-            const img = new Image();
-            img.onload = () => {
-              const x = data.x;
-              const y = data.y;
-              const w = data.width;
-              const h = data.height;
+          // 1. Chỉ vẽ khung (không cần load lại ảnh từ server)
+          const x = data.x;
+          const y = data.y;
+          const w = data.width;
+          const h = data.height;
 
-            lastBBox = { width: w, height: h };
+          lastBBox = { width: w, height: h };
+          overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+          overlayCtx.lineWidth = 2; // Tăng độ dày cho dễ nhìn
+          overlayCtx.strokeStyle = "lime";
+          overlayCtx.strokeRect(x, y, w, h);
 
-            // vẽ bbox mới
-            overlayCtx.strokeStyle = "lime";
-            overlayCtx.lineWidth = 1;
-            overlayCtx.strokeStyle = "rgba(0,255,0,0.9)";
-            overlayCtx.strokeRect(x, y, w, h);
-
-            };
-            img.src = data.video;
-            if (data.label === "Unknown") {
-              labelResult.textContent = `Name: ${data.label}`;
-            } else {
-              labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
-            }
+          // 2. Cập nhật label
+          if (data.label === "Unknown") {
+            labelResult.textContent = `Name: ${data.label}`;
+          } else {
+            labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
           }
 
-          // crop chỉ update mỗi 2s
-          if (now - lastCropTime > 2000) {
+          // 3. Cập nhật ảnh crop nếu server có trả về
+          if (needCrop && data.crop) {
             croppedImage.src = data.crop;
-            lastCropTime = now;
+            lastCropTime = Date.now(); // Reset lại thời gian
           }
-        }
+        } 
         else if (data.label === "No face") {
+          overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
           labelResult.textContent = `${data.label}`;
         }
-        else {
-          console.warn("Detect thất bại:", data.message);
-          lastBBox = null;
-        }
       })
-      .catch(err => console.error("Lỗi khi gọi /predict:", err));
+      .catch(err => console.error("Lỗi khi gọi /predict:", err))
+      .finally(() => {
+        isPredicting = false;
+        // Chỉ gửi request tiếp theo sau khi request này đã hoàn thành
+        // Đợi thêm khoảng 100ms - 200ms để giảm tải cho CPU
+        setTimeout(doPredict, 150); 
+      });
   }
 
-  // Auto predict
-  setInterval(doPredict, 400);
+  // Bắt đầu vòng lặp thay vì dùng setInterval
+  doPredict();
 
   // Nút Register
   registerBtn.addEventListener('click', () => {
