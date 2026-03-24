@@ -4,101 +4,98 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>My Application - Face Recognition</title>
+
 <style>
   body {
-    margin: 0; 
+    margin: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #0b0015;
-    color: #cfc8ff;
+    background: #f5f6fb;
+    color: #2c2c2c;
     display: flex;
     height: 100vh;
     overflow: hidden;
   }
+
   #leftPanel, #rightPanel {
     padding: 20px;
     box-sizing: border-box;
   }
+
+  /* LEFT PANEL full height */
   #leftPanel {
     flex: 2;
     display: flex;
     flex-direction: column;
-    gap: 25px;
-  }
-  #cameraView, #croppedView {
-    background:#12001f;
-    border-radius: 20px;
-    border: 2px solid #e0e0e0;
-    height: 300px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-  }
-  #cameraView video, #croppedView img {
-    max-height: 100%;
-    max-width: 100%;
-    border-radius: 20px;
-    border: 1px solid rgba(140, 80, 255, 0.4);
-    display: block;
+    gap: 16px;
+    height: 100vh;
   }
 
+  /* CAMERA VIEW ăn gần full */
   #cameraView {
-    background: #12001f;
-    border-radius: 25px;
-    position: relative;
+    flex: 1;                 /* QUAN TRỌNG */
+    min-height: 0;           /* fix flex overflow */
+    background: #ffffff;
+    border-radius: 24px;
+    border: 2px solid #dcdcdc;
     display: flex;
     justify-content: center;
     align-items: center;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
   }
 
   #cameraView video {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;       /* full khung, không méo */
     border-radius: 20px;
+    display: block;
   }
 
   #overlay {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;          /* top:0 left:0 right:0 bottom:0 */
+    width: 100%;
+    height: 100%;
     pointer-events: none;
   }
 
-  #labelResult, #labelRegister {
+
+  /* LABELS chỉ chiếm đúng chiều cao cần */
+  #labelResult,
+  #labelRegister {
+    flex-shrink: 0;
     font-size: 18px;
-    font-weight: bold;
-    color: #b889ff;
-    height: 30px;
-    line-height: 30px;
+    font-weight: 600;
+    color: #5a4bdb;
+    height: 28px;
+    line-height: 28px;
     text-align: center;
   }
+
   #rightPanel {
     flex: 1;
-    background: #140020;
-    border-left: 2px solid rgba(100, 60, 160, 0.35);
+    background: #ffffff;
+    border-left: 1px solid #e5e5e5;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
     align-items: center;
-    padding-top: 150px;
-    box-shadow: inset 0 0 25px rgba(80, 20, 140, 0.4);
+    padding-top: 140px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.03);
   }
+
   .card {
-    background: #1b022d;
-    border-radius: 18px;
-    padding: 40px 20px;
+    background: #ffffff;
+    border-radius: 20px;
     padding: 40px 20px;
     width: 80%;
     text-align: center;
-    box-shadow:
-      12px 12px 30px #0d0015,
-      -12px -12px 30px #26003e;
-    border: 1px solid rgba(180, 130, 255, 0.2);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
   }
+
   button {
-    background: linear-gradient(135deg, #7a32ff, #b35bff);
+    background: linear-gradient(135deg, #6c63ff, #8f89ff);
     color: white;
     font-size: 16px;
     font-weight: bold;
@@ -106,82 +103,82 @@
     border-radius: 16px;
     padding: 14px;
     width: 100%;
-    border: none;
     cursor: pointer;
-    box-shadow:
-      0 10px 25px rgba(150, 80, 255, 0.4),
-      inset 0 -5px 15px rgba(0, 0, 0, 0.4);
-
+    box-shadow: 0 10px 25px rgba(108,99,255,0.35);
     transition: 0.25s ease;
   }
+
   button:hover {
-    transform: translateY(-3px);
-    box-shadow:
-      0 15px 35px rgba(150, 80, 255, 0.6),
-      inset 0 -5px 15px rgba(0, 0, 0, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 15px 35px rgba(108,99,255,0.45);
   }
 
-
-  /* Register dialog styles */
+  /* REGISTER DIALOG */
   #registerDialog {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #1a0424;
-    color: #e4d3ff;
-    border: 1px solid rgba(180, 130, 255, 0.4);
+    background: #ffffff;
+    color: #333;
+    border: 1px solid #ddd;
     border-radius: 16px;
     padding: 30px 20px;
     width: 350px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
     display: none;
-    box-shadow: 0 15px 35px rgba(120, 60, 200, 0.6);
     z-index: 9999;
     animation: popIn 0.25s ease;
     flex-direction: column;
   }
+
   @keyframes popIn {
-    from { opacity: 0; transform: translate(-50%, -60%) scale(0.8); }
+    from { opacity: 0; transform: translate(-50%, -60%) scale(0.9); }
     to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   }
 
   #registerDialog label {
     font-size: 14px;
-    color: #f8f8f8;
-    margin-bottom: 5px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    display: block;
   }
-  #registerDialog input[type="text"], #registerDialog input[type="password"] {
-    padding: 8px;
-    background: #2a0f3a;
-    color: #e4d3ff;
+
+  #registerDialog input {
+    padding: 12px;
+    background: #f2f2f2;
+    color: #333;
     border: 1px solid #ccc;
     border-radius: 10px;
     width: 100%;
+    margin-bottom: 18px;
     box-sizing: border-box;
-    margin-bottom: 15px;
   }
+
   #registerDialogButtons {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 12px;
+    margin-top: 10px;
   }
+
   #registerDialog button {
-    background: #2a0f3a;
-    color: rgb(190, 190, 190);
-    border: 1px solid rgb(190, 190, 190);
-    padding: 6px 12px;
-    border-radius: 8px;
+    background: #6c63ff;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
     width: auto;
+    font-weight: 600;
   }
-  #registerDialog button:hover {
-    background: #f2f2f2;
-  }
+
+
   #registerDialog .hidden {
     display: none;
   }
 </style>
 </head>
+
 <body>
 
 <div id="leftPanel">
@@ -189,11 +186,17 @@
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
   </div>
+
   <div id="labelResult">Kết quả nhận diện</div>
   <div id="labelRegister"></div>
+
+  <!--
   <div id="croppedView">
-    <img id="croppedImage" style="width:200px; height:200px; object-fit:cover; border:1px solid #ccc;" alt="Ảnh crop"/>
+    <img id="croppedImage"
+         style="width:200px; height:200px; object-fit:cover; border:1px solid #ccc;"
+         alt="Ảnh crop"/>
   </div>
+  -->
 </div>
 
 <div id="rightPanel">
@@ -202,21 +205,19 @@
   </div>
 </div>
 
-<!-- Register Dialog -->
 <div id="registerDialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
   <h2 id="dialogTitle">Register</h2>
+
   <div id="passwordSection">
-    <label for="passwordInput" style="display:block; margin-bottom:10px;">
-      Mật khẩu:
-    </label>
+    <label for="passwordInput">Mật khẩu:</label>
     <input type="password" id="passwordInput" placeholder="Nhập mật khẩu..." autocomplete="off" />
   </div>
+
   <div id="nameSection" class="hidden">
-    <label for="nameInput" style="display:block; margin-bottom:10px;">
-      Tên:
-    </label>
+    <label for="nameInput">Tên:</label>
     <input type="text" id="nameInput" placeholder="Nhập tên..." autocomplete="off" />
   </div>
+
   <div id="registerDialogButtons">
     <button id="cancelBtn">Cancel</button>
     <button id="okBtn">OK</button>

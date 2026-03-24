@@ -20,11 +20,12 @@ notebooks/
 # ==========================
 # Data & Models
 # ==========================
+archive/
 data/
 !data/README.md          # giữ README.md để mô tả dữ liệu
 
 # models/
-# !models/README.md        # giữ README.md để mô tả model
+!models/       # giữ README.md để mô tả model
 
 # outputs/
 # *.txt

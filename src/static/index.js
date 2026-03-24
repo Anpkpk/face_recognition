@@ -67,7 +67,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
             // vẽ bbox mới
             overlayCtx.strokeStyle = "lime";
-            overlayCtx.lineWidth = 2;
+            overlayCtx.lineWidth = 1;
+            overlayCtx.strokeStyle = "rgba(0,255,0,0.9)";
             overlayCtx.strokeRect(x, y, w, h);
 
             };
@@ -97,7 +98,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Auto predict
-  setInterval(doPredict, 500);
+  setInterval(doPredict, 400);
 
   // Nút Register
   registerBtn.addEventListener('click', () => {

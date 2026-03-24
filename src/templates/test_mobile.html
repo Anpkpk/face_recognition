@@ -5,244 +5,175 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>My Application - Face Recognition</title>
 <style>
-  /* ===== DARK THEME ===== */
   body {
-    margin: 0;
+    margin: 0; 
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #0b0015;
-    color: #cfc8ff;
+    background: #f5f5f5;
+    color: #333;
     display: flex;
     height: 100vh;
     overflow: hidden;
   }
-
-  /* ===== PARTICLE BACKGROUND ===== */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background:
-      radial-gradient(circle at center, rgba(120, 60, 255, 0.25), transparent 70%),
-      radial-gradient(circle at 20% 80%, rgba(80, 30, 200, 0.25), transparent 70%),
-      radial-gradient(circle at 80% 30%, rgba(150, 90, 255, 0.25), transparent 70%);
-    animation: pulseBg 6s infinite alternate;
-    z-index: -2;
-  }
-
-  @keyframes pulseBg {
-    from { filter: blur(20px); }
-    to   { filter: blur(40px); }
-  }
-
-  /* ===== LAYOUT ===== */
   #leftPanel, #rightPanel {
     padding: 20px;
     box-sizing: border-box;
   }
-
   #leftPanel {
-    flex: 2;
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 25px;
+    gap: 15px;
   }
-
-  /* ===== CAMERA VIEW BOX WITH PURPLE GLOW ===== */
   #cameraView {
-    background: #12001f;
-    border-radius: 25px;
-    height: 300px;
-    position: relative;
+    background: #666;
+    border-radius: 20px;
+    border: 3px solid #000;
+    flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
-
-    box-shadow:
-      0 0 25px rgba(150, 80, 255, 0.7),
-      0 0 45px rgba(70, 0, 200, 0.5) inset;
+    position: relative;
+    color: #fff;
+    font-size: 24px;
   }
-
   #cameraView video {
     max-height: 100%;
     max-width: 100%;
-    border-radius: 20px;
+    border-radius: 17px;
+    display: block;
   }
 
-  /* ===== NEON FACE BOX ON CANVAS ===== */
   #overlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    filter: drop-shadow(0 0 6px #c77bff) drop-shadow(0 0 12px #e09aff);
   }
 
-  /* ===== CROPPED VIEW ===== */
-  #croppedView {
-    background: #1a0a29;
-    border-radius: 20px;
-    height: 300px;
-    border: 2px solid rgba(140, 80, 255, 0.3);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow:
-      0 0 20px rgba(100, 50, 200, 0.3),
-      inset 0 0 25px rgba(60, 0, 120, 0.3);
-  }
-
-  #croppedView img {
-    border-radius: 14px;
-    border: 1px solid rgba(140, 80, 255, 0.4);
-  }
-
-  /* ===== LABELS ===== */
   #labelResult, #labelRegister {
     font-size: 18px;
     font-weight: bold;
+    color: #000;
+    height: 60px;
+    line-height: 60px;
     text-align: center;
-    color: #b889ff;
+    background: #fff;
+    border-radius: 12px;
+    border: 3px solid #000;
   }
-
-  /* ===== RIGHT PANEL ===== */
   #rightPanel {
-    flex: 1;
-    background: #140020;
-    border-left: 2px solid rgba(100, 60, 160, 0.35);
+    flex: 0 0 250px;
+    background: #f5f5f5;
+    border-left: 3px solid #000;
     display: flex;
-    justify-content: flex-start;
+    flex-direction: column;
+    justify-content: center;
     align-items: center;
-    padding-top: 150px;
-
-    box-shadow: inset 0 0 25px rgba(80, 20, 140, 0.4);
   }
-
   .card {
-    background: #1b022d;
-    border-radius: 22px;
+    background: #c8b3ff;
+    border-radius: 18px;
     padding: 40px 20px;
     width: 80%;
     text-align: center;
-    box-shadow:
-      12px 12px 30px #0d0015,
-      -12px -12px 30px #26003e;
-    border: 1px solid rgba(180, 130, 255, 0.2);
+    border: 3px solid #000;
   }
-
-  /* ===== LIQUID BUTTON ===== */
   button {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, #7a32ff, #b35bff);
-    border: none;
+    background: #c8b3ff;
+    color: #000;
+    font-size: 16px;
+    font-weight: bold;
+    border: 3px solid #000;
     border-radius: 16px;
     padding: 14px;
-    color: white;
-    font-size: 18px;
-    font-weight: bold;
-    cursor: pointer;
     width: 100%;
-
-    box-shadow:
-      0 10px 25px rgba(150, 80, 255, 0.4),
-      inset 0 -5px 15px rgba(0, 0, 0, 0.4);
-
+    cursor: pointer;
     transition: 0.25s ease;
   }
-
   button:hover {
     transform: translateY(-3px);
-    box-shadow:
-      0 15px 35px rgba(150, 80, 255, 0.6),
-      inset 0 -5px 15px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.3);
   }
 
-  button:active {
-    transform: scale(0.96);
-    background: linear-gradient(135deg, #5a22cc, #9f45ff);
-  }
-
-  /* Liquid shine */
-  button::before {
-    content: "";
-    position: absolute;
-    top: -120%;
-    left: -50%;
-    width: 200%;
-    height: 250%;
-    background: radial-gradient(circle, rgba(255,255,255,0.35) 10%, transparent 70%);
-    animation: liquidRotate 6s linear infinite;
-  }
-
-  @keyframes liquidRotate {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-  }
-
-  /* ===== REGISTER DIALOG ===== */
-  .hidden {
-    display: none !important;
-  }
-
+  /* Register dialog styles */
   #registerDialog {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #1a0424;
-    color: #e4d3ff;
-    border: 1px solid rgba(180, 130, 255, 0.4);
+    background: #fff;
+    color: #333;
+    border: 3px solid #000;
     border-radius: 16px;
     padding: 30px 20px;
     width: 350px;
-    box-shadow: 0 15px 35px rgba(120, 60, 200, 0.6);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+    display: none;
     z-index: 9999;
     animation: popIn 0.25s ease;
+    flex-direction: column;
   }
-
   @keyframes popIn {
     from { opacity: 0; transform: translate(-50%, -60%) scale(0.8); }
     to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   }
 
-  #registerDialog input {
-    background: #2a0f3a;
-    color: #e4d3ff;
-    border: 1px solid rgba(180, 130, 255, 0.4);
-    border-radius: 10px;
-    padding: 10px;
-    width: 100%;
+  #registerDialog label {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 5px;
   }
-
+  #registerDialog input[type="text"], #registerDialog input[type="password"] {
+    padding: 8px;
+    background: #fff;
+    color: #333;
+    border: 2px solid #000;
+    border-radius: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 15px;
+  }
   #registerDialogButtons {
     display: flex;
-    justify-content: space-between;
-    margin-top: 20px;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  #registerDialog button {
+    background: #c8b3ff;
+    color: #000;
+    border: 2px solid #000;
+    padding: 6px 12px;
+    border-radius: 8px;
+    width: auto;
+  }
+  #registerDialog button:hover {
+    background: #b39aff;
+  }
+  #registerDialog .hidden {
+    display: none;
   }
 </style>
 </head>
 <body>
+
 <div id="leftPanel">
   <div id="cameraView">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
   </div>
-  <div id="labelResult">Kết quả nhận diện</div>
+  <div id="labelResult"></div>
   <div id="labelRegister"></div>
-  <div id="croppedView">
-    <img id="croppedImage" style="width:200px; height:200px; object-fit:cover; border:1px solid #ccc;" alt="Ảnh crop"/>
-  </div>
 </div>
 
 <div id="rightPanel">
   <div class="card">
-    <button id="registerButton">Register</button>
+    <button id="registerButton">register</button>
   </div>
 </div>
 
-<!-- Register Dialog (Hidden by default) -->
-<div id="registerDialog" class="hidden" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+<!-- Register Dialog -->
+<div id="registerDialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
   <h2 id="dialogTitle">Register</h2>
   <div id="passwordSection">
     <label for="passwordInput" style="display:block; margin-bottom:10px;">
@@ -261,6 +192,8 @@
     <button id="okBtn">OK</button>
   </div>
 </div>
+</body>
+</html>
 
 <script>
   // === FIX REGISTER DIALOG ===

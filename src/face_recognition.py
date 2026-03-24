@@ -1,118 +1,127 @@
 import os
 import numpy as np
 import cv2
-import mediapipe as mp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.models as models
 from PIL import Image
+from facenet_pytorch import MTCNN
 
 from src.config import DEVICE, MODEL_PATH, REGISTER_DIR, TRANSFORM, EMBEDDED_DIR
 
 
-class SiameseNet(nn.Module):
+class FaceNet(nn.Module):
 
     def __init__(self, embedding_dim=256):
-        super(SiameseNet, self).__init__()
-        mobilenet = models.mobilenet_v3_large(weights="DEFAULT")
+        super().__init__()
 
-        self.feature_extractor = mobilenet.features
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        base = models.mobilenet_v3_large(
+            weights=models.MobileNet_V3_Large_Weights.DEFAULT
+        )
 
-        last_channel = mobilenet.classifier[0].in_features
-        self.fc = nn.Linear(last_channel, embedding_dim)
-        self.dropout = nn.Dropout(0.5)
+        self.features = base.features
+        self.pool = nn.AdaptiveAvgPool2d(1)
 
-    def forward_once(self, x):
-        x = self.feature_extractor(x)
-        x = self.avgpool(x)
+        in_feat = base.classifier[0].in_features
+        self.fc = nn.Linear(in_feat, embedding_dim)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.pool(x)
         x = torch.flatten(x, 1)
-        x = self.dropout(F.relu(self.fc(x)))
-        x = F.normalize(x, p=2, dim=1)
+        x = self.fc(x)
+
+        x = F.normalize(x, dim=1)
         return x
 
-    def forward(self, anchor, positive, negative):
-        out_anchor = self.forward_once(anchor)
-        out_positive = self.forward_once(positive)
-        out_negative = self.forward_once(negative)
-        return out_anchor, out_positive, out_negative
 
+class ArcFaceLoss(nn.Module):
 
-class TripletLoss(nn.Module):
+    def __init__(self, embedding_dim, num_classes, s=30.0, m=0.5):
+        super().__init__()
 
-    def __init__(self, margin=1.0):
-        super(TripletLoss, self).__init__()
-        self.margin = margin
+        self.s = s
+        self.m = m
 
-    def forward(self, anchor, positive, negative):
-        pos_dist = F.pairwise_distance(anchor, positive, p=2)
-        neg_dist = F.pairwise_distance(anchor, negative, p=2)
-        losses = F.relu(pos_dist - neg_dist + self.margin)
-        return losses.mean()
+        self.weight = nn.Parameter(
+            torch.FloatTensor(num_classes, embedding_dim)
+        )
+
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, embeddings, labels):
+        embeddings = F.normalize(embeddings)
+        weight = F.normalize(self.weight)
+
+        cosine = F.linear(embeddings, weight)
+
+        theta = torch.acos(torch.clamp(cosine, -1+1e-7, 1-1e-7))
+        target_logits = torch.cos(theta + self.m)
+
+        one_hot = F.one_hot(labels, num_classes=cosine.size(1)).float()
+
+        logits = cosine * (1 - one_hot) + target_logits * one_hot
+        logits *= self.s
+
+        loss = F.cross_entropy(logits, labels)
+        return loss
 
 
 class FaceEngine:
 
     def __init__(self):
         self.reference_paths = {}
-        self.face_detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=0.8
-        )
+        self.face_detector = MTCNN(
+            image_size=160,
+            margin=20,          # padding quanh mặt
+            min_face_size=40,
+            thresholds=[0.6, 0.7, 0.7],
+            post_process=False,
+            device=DEVICE
+        )  
 
         self.set_model(MODEL_PATH)
         self.load_dir(REGISTER_DIR)
 
     def set_model(self, model_path):
-        self.model = SiameseNet().to(DEVICE)
+        self.model = FaceNet().to(DEVICE)
         self.model.load_state_dict(
             torch.load(model_path, map_location=torch.device(DEVICE))
         )
         self.model.eval()
 
     def crop_face(self, image):
-        if isinstance(image, str):  # path
-            img = cv2.imread(image)
-            if img is None:
-                raise FileNotFoundError(f"Không thể load ảnh: {image}")
-        elif isinstance(image, Image.Image):  # PIL
-            img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        elif isinstance(image, np.ndarray):  # numpy
-            img = image
+        # --- load image ---
+        if isinstance(image, str):
+            img = Image.open(image).convert("RGB")
+        elif isinstance(image, Image.Image):
+            img = image.convert("RGB")
+        elif isinstance(image, np.ndarray):
+            img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         else:
-            raise TypeError(
-                "crop_face chỉ nhận path (str), PIL.Image hoặc numpy.ndarray"
-            )
+            raise TypeError("crop_face chỉ nhận path, PIL.Image hoặc numpy.ndarray")
 
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # --- detect ---
+        boxes, _ = self.detector.detect(img)
 
-        results = self.face_detector.process(img_rgb)
+        if boxes is None:
+            print("No face detected in the image.")
+            return None
 
-        if results.detections:
-            for detection in results.detections:
-                bboxC = detection.location_data.relative_bounding_box
-                ih, iw, _ = img.shape
+        # lấy mặt lớn nhất
+        areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]
+        box = boxes[np.argmax(areas)]
 
-                x = max(int(bboxC.xmin * iw), 0)
-                y = max(int(bboxC.ymin * ih), 0)
-                w = int(bboxC.width * iw)
-                h = int(bboxC.height * ih)
-                x2 = min(x + w, iw)
-                y2 = min(y + h, ih)
+        x1, y1, x2, y2 = map(int, box)
+        w, h = img.size
 
-                face_crop = img[y:y2, x:x2]
-                cv2.rectangle(
-                    img, (x, y), (x2, y2), (0, 255, 0), 2
-                )
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
 
-            return Image.fromarray(
-                cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-            )
-        
-        print("No face detected in the image.")
-        return None
+        face = img.crop((x1, y1, x2, y2))
+        return face
 
     def load_dir(self, root_dir=REGISTER_DIR):
         self.reference_paths.clear()
@@ -131,7 +140,7 @@ class FaceEngine:
                             img = TRANSFORM(img_crop).unsqueeze(0).to(DEVICE)
 
                             with torch.no_grad():
-                                emb = self.model.forward_once(img).cpu()
+                                emb = self.model.forward(img).cpu()
                             embeddings.append(emb)
 
                     if embeddings:
@@ -175,7 +184,7 @@ class FaceEngine:
 
         distances = []
         with torch.no_grad():
-            embed_test = self.model.forward_once(cropped)
+            embed_test = self.model.forward(cropped)
 
             for ref_path, ref_embedding in self.reference_paths.items():
                 if ref_embedding is not None:
