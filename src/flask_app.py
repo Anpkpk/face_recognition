@@ -1,4 +1,5 @@
 import os
+import psutil
 from io import BytesIO
 from pathlib import Path
 
@@ -13,38 +14,12 @@ import torch.nn.functional as F
 import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
-from facenet_pytorch import MTCNN
+import mediapipe as mp
 import faiss
 import pickle
 import timm
 
 from src import config
-
-# --------------------------- Model classes  ---------------------------
-# class FaceNet(nn.Module):
-
-#     def __init__(self, embedding_dim=256):
-#         super().__init__()
-
-#         base = models.mobilenet_v3_large(
-#             weights=models.MobileNet_V3_Large_Weights.DEFAULT
-#         )
-
-#         self.features = base.features
-#         self.pool = nn.AdaptiveAvgPool2d(1)
-
-#         in_feat = base.classifier[0].in_features
-#         self.fc = nn.Linear(in_feat, embedding_dim)
-
-#     def forward(self, x):
-#         x = self.features(x)
-#         x = self.pool(x)
-#         x = torch.flatten(x, 1)
-#         x = self.fc(x)
-
-#         x = F.normalize(x, dim=1)
-#         return x
-
 
 class FaceNet(nn.Module):
     def __init__(self, backbone="resnet18", embedding_dim=256):
@@ -134,13 +109,8 @@ class FaceNet(nn.Module):
 class FaceEngine:
 
     def __init__(self):
-        self.face_detector = MTCNN(
-            image_size=160,
-            margin=20,
-            min_face_size=40,
-            thresholds=[0.6, 0.7, 0.7],
-            post_process=False,
-            device=config.DEVICE
+        self.mp_face_detection = mp.solutions.face_detection.FaceDetection(
+            model_selection=0, min_detection_confidence=0.6
         )  
         self.save_dir = config.REGISTER_DIR
         os.makedirs(self.save_dir, exist_ok=True)
@@ -160,7 +130,7 @@ class FaceEngine:
             self.load_dir(config.REGISTER_DIR)
 
     def set_model(self, model_path):
-        self.model = FaceNet('mobileone').to(config.DEVICE)
+        self.model = FaceNet('mobilenet_v3').to(config.DEVICE)
         self.model.load_state_dict(
             torch.load(model_path, map_location=torch.device(config.DEVICE))
         )
@@ -198,24 +168,38 @@ class FaceEngine:
             raise TypeError("crop_face chỉ nhận path, PIL.Image hoặc numpy.ndarray")
 
         # --- detect ---
-        boxes, _ = self.face_detector.detect(img)
+        # Chuyển PIL Image sang Numpy Array vì MediaPipe yêu cầu định dạng này
+        img_np = np.array(img)
+        ih, iw, _ = img_np.shape
+        
+        results = self.mp_face_detection.process(img_np)
 
-        if boxes is None:
-            print("No face detected in the image.")
+        if not results.detections:
             return None
 
-        # lấy mặt lớn nhất
-        areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]
-        box = boxes[np.argmax(areas)]
+        # Lấy khuôn mặt đầu tiên (độ tin cậy cao nhất)
+        detection = results.detections[0]
+        bboxC = detection.location_data.relative_bounding_box
+        
+        # Chuyển đổi hệ tọa độ tương đối sang pixel
+        x = int(bboxC.xmin * iw)
+        y = int(bboxC.ymin * ih)
+        w = int(bboxC.width * iw)
+        h = int(bboxC.height * ih)
 
-        x1, y1, x2, y2 = map(int, box)
-        w, h = img.size
+        # Giới hạn tọa độ để không bị cắt lẹm ra ngoài khung ảnh
+        x = max(0, x)
+        y = max(0, y)
+        w = min(iw - x, w)
+        h = min(ih - y, h)
 
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(w, x2), min(h, y2)
-
-        face = img.crop((x1, y1, x2, y2))
-        return face
+        # Cắt khuôn mặt và trả về dạng PIL Image như logic ban đầu
+        face_crop_np = img_np[y:y+h, x:x+w]
+        
+        if face_crop_np.size == 0:
+            return None
+            
+        return Image.fromarray(face_crop_np)
 
     def load_dir(self, root_dir=config.REGISTER_DIR):
         """
@@ -293,52 +277,69 @@ class FaceEngine:
         print(f"Đã lưu FAISS index vào {self.index_path}")
 
     def detect_and_crop(self, image_b64, need_crop=False):
-        # Decode base64 -> PIL
         try:
-            # Xử lý an toàn hơn trường hợp b64 có hoặc không có prefix 'data:image/jpeg;base64,'
+            # 1. Dùng OpenCV để giải mã Base64 (Nhanh hơn PIL rất nhiều)
             b64_data = image_b64.split(',')[1] if ',' in image_b64 else image_b64
             img_data = base64.b64decode(b64_data)
-            pil_img = Image.open(BytesIO(img_data)).convert("RGB")
+            np_arr = np.frombuffer(img_data, np.uint8)
+            img_cv2 = cv2.imdecode(np_arr, cv2.IMREAD_COLOR) # Ảnh BGR
+            
+            if img_cv2 is None:
+                return None, None, None, "No face", None
+                
+            h_img, w_img, _ = img_cv2.shape
+            
+            # MediaPipe yêu cầu ảnh RGB
+            img_rgb = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2RGB)
+
         except Exception as e:
             print("Lỗi giải mã ảnh:", e)
             return None, None, None, "No face", None
 
-        # ---- MTCNN detect ----
-        boxes, probs = self.face_detector.detect(pil_img)
+        # 2. CHẠY MEDIAPIPE (Siêu nhanh - Single shot)
+        results = self.mp_face_detection.process(img_rgb)
 
-        if boxes is None:
+        if not results.detections:
             return None, None, None, "No face", None
 
-        # lấy face lớn nhất
-        areas = [(b[2]-b[0]) * (b[3]-b[1]) for b in boxes]
-        box = boxes[np.argmax(areas)]
+        # Lấy khuôn mặt đầu tiên
+        detection = results.detections[0]
+        bboxC = detection.location_data.relative_bounding_box
+        
+        # Chuyển đổi tọa độ tỷ lệ sang pixel thực tế
+        x1 = int(bboxC.xmin * w_img)
+        y1 = int(bboxC.ymin * h_img)
+        w = int(bboxC.width * w_img)
+        h = int(bboxC.height * h_img)
+        
+        x2 = x1 + w
+        y2 = y1 + h
 
-        x1, y1, x2, y2 = map(int, box)
-        w_img, h_img = pil_img.size
-
+        # Chặn viền chống lỗi tràn ảnh
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w_img, x2), min(h_img, y2)
+        
+        if x2 <= x1 or y2 <= y1:
+            return None, None, None, "No face", None
 
-        face_pil = pil_img.crop((x1, y1, x2, y2))
         coords = (x1, y1, x2 - x1, y2 - y1)
 
-        # ---- predict using FAISS ----
+        # Cắt mặt trên ảnh RGB và chuyển sang PIL cho FAISS
+        face_rgb = img_rgb[y1:y2, x1:x2]
+        face_pil = Image.fromarray(face_rgb)
+
+        # 3. NHẬN DIỆN BẰNG FAISS (Model cũ của bạn)
         best_class, best_dist = self.predict_image(face_pil)
 
-        # ---- TỐI ƯU 1: Chỉ Encode face crop khi Frontend yêu cầu (need_crop = True) ----
+        # 4. CHỈ ENCODE ẢNH KHI ĐƯỢC YÊU CẦU
         face_b64 = None
         if need_crop:
-            face_np = cv2.cvtColor(np.array(face_pil), cv2.COLOR_RGB2BGR)
-            # Nén nhẹ lại ảnh crop một chút (chất lượng 80%) để gửi nhanh hơn
-            _, buffer1 = cv2.imencode(".jpg", face_np, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            face_bgr = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2BGR)
+            _, buffer1 = cv2.imencode(".jpg", face_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             face_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer1).decode("utf-8")
 
-        # ---- TỐI ƯU 2: Bỏ hoàn toàn việc vẽ bbox lên ảnh gốc bằng OpenCV ----
-        # Việc gửi lại nguyên khung hình video cho frontend là thủ phạm chính gây lag.
-        # Ta gán img = None vì frontend đã tự lấy tọa độ `coords` để vẽ rồi.
-        img = None
+        img = None # Bỏ hẳn việc nén ảnh to
 
-        # Vẫn return 5 biến để không làm hỏng logic unpack ở Flask Route của bạn
         return face_b64, img, coords, best_class, best_dist
 
     def convert_b64_to_pil(self, img_data):
@@ -392,42 +393,55 @@ engine.load_dir()
 # --------------------------- Flask app (Giữ nguyên) ---------------------------
 app = Flask(__name__)
 
+last_predict_time = 0 
+
 @app.route('/')
 def index():
     return render_template("index.html")
 
-last_predict_time = 0 
-
-# Xóa bỏ biến global last_predict_time vì nó không giải quyết được xung đột đa luồng trong Flask
-
 @app.route("/predict", methods=["POST"])
 def predict():
-    image_b64 = request.form["image"]
-    # Nhận biến need_crop từ frontend (mặc định là False nếu không có)
-    need_crop = request.form.get("need_crop") == 'true'
+    # 1. BẮT ĐẦU BẤM GIỜ
+    start_time = time.time()
 
-    # Truyền need_crop vào hàm
-    face_b64, vid, coords, label, dist = engine.detect_and_crop(image_b64, need_crop=need_crop)
+    # Lúc này image_b64 CHỈ LÀ CÁI KHUÔN MẶT, KHÔNG PHẢI CẢ CÁI VIDEO NỮA
+    image_b64 = request.form.get("image")
+    
+    if not image_b64:
+        return jsonify(success=False, message="Không có ảnh")
 
-    if label == "No face":
-        return jsonify(success=False, label="No face")        
+    try:
+        # Giải mã ảnh Face trực tiếp ra dạng PIL
+        b64_data = image_b64.split(',')[1] if ',' in image_b64 else image_b64
+        img_data = base64.b64decode(b64_data)
+        face_pil = Image.open(BytesIO(img_data)).convert("RGB")
+    except Exception as e:
+        print("Lỗi giải mã:", e)
+        return jsonify(success=False, message="Lỗi giải mã ảnh")
 
-    if coords:
-        x, y, w, h = coords
-        response = {
-            "success": True,
-            "x": x, "y": y, "width": w, "height": h,
-            "label": label,
-            "distance": float(dist) if dist else 0.0
+    # BỎ QUA BƯỚC DETECT MẶT TRÊN SERVER!
+    # Ném thẳng khuôn mặt vào FAISS để tìm xem đây là ai
+    best_class, best_dist = engine.predict_image(face_pil)
+    
+    # 2. KẾT THÚC BẤM GIỜ VÀ TÍNH TOÁN
+    end_time = time.time()
+    inference_time = end_time - start_time
+    backend_fps = 1.0 / inference_time if inference_time > 0 else 0
+    
+    # 3. ĐO RAM CỦA TIẾN TRÌNH FLASK BẰNG PSUTIL
+    process = psutil.Process(os.getpid())
+    ram_usage_mb = process.memory_info().rss / (1024 * 1024)
+    
+    return jsonify({
+        "success": True,
+        "label": best_class,
+        "distance": float(best_dist) if best_dist else 0.0,
+        "stats": {
+            "inference_time_ms": round(inference_time * 1000, 2), # Đổi ra ms
+            "backend_fps": round(backend_fps, 2),
+            "backend_ram_mb": round(ram_usage_mb, 2)
         }
-        
-        # Chỉ nhét base64 của ảnh cắt vào cục JSON nếu có
-        if face_b64:
-            response["crop"] = face_b64
-            
-        return jsonify(response)
-    else:
-        return jsonify(success=False, message="Không tìm thấy khuôn mặt đủ lớn")
+    })
 
 @app.route("/register", methods=["POST"])
 def register():
@@ -447,7 +461,6 @@ def register():
     engine.take_photo(face_crop, name)
 
     return jsonify(success=True, name=name)
-
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 PROJECT_DIR = BASE_DIR.parent
 
-MODEL_PATH = PROJECT_DIR / "models" / "SiameseNet_ArcFace" / "best_model_mobile_one.pth"
+MODEL_PATH = PROJECT_DIR / "models" / "SiameseNet_ArcFace" / "best_model_mobilenetv3.pth"
 TEMP_DIR = PROJECT_DIR / "data" / "temp_face.jpg"
 REGISTER_DIR = PROJECT_DIR / "data" / "registered"
 EMBEDDED_DIR = PROJECT_DIR / "output" / "embedded.txt"

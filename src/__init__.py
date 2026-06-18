@@ -9,7 +9,7 @@ Các module chính gồm:
 
 from .config import DEVICE, IMG_SIZE, MODEL_PATH, TRANSFORM
 from .face_recognition import FaceEngine
-from .gui import MainWindow
+# from .gui import MainWindow
 
 __all__ = [
     # Config

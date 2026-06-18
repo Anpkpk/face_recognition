@@ -15,49 +15,118 @@ window.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('overlay');
   const overlayCtx = overlay.getContext('2d');
 
-  video.addEventListener('loadedmetadata', () => {
-    overlay.width = video.videoWidth;
-    overlay.height = video.videoHeight;
+  let currentName = "Đang nhận diện...";
+  let lastRecognizeTime = 0;
+  let lastBBox = null; 
+  let currentFaceImage = null; 
+
+  // --- CÁC BIẾN LƯU TRỮ THÔNG SỐ HIỆU SUẤT ---
+  // 1. Client FPS (Camera)
+  let frameCount = 0;
+  let lastFpsTime = performance.now();
+  let clientFps = 0;
+  
+  // 2. Server Stats (Từ Flask API)
+  let serverRam = 0;
+  let serverFps = 0;
+  let serverLatency = 0;
+  // -------------------------------------------
+
+  // Khởi tạo MediaPipe Face Detection
+  const faceDetection = new FaceDetection({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+    }
   });
 
-  // Bật camera
-  navigator.mediaDevices.getUserMedia({ video: { width: 400, height: 300 } })
-    .then(stream => {
-      video.srcObject = stream;
-      video.play();
-    })
-    .catch(err => {
-      console.error("Lỗi khi mở camera:", err);
-      alert(`Không thể mở camera. Vui lòng kiểm tra quyền truy cập và thử lại.\nChi tiết: ${err.message}`);
-    });
+  faceDetection.setOptions({
+    model: 'short',
+    minDetectionConfidence: 0.5
+  });
 
-  // Biến lưu bbox mới nhất từ predict
-  // ... (Phần setup camera giữ nguyên)
+  // Hàm này tự động chạy mỗi khi Camera có khung hình mới (~30FPS)
+  faceDetection.onResults((results) => {
+    // --- TÍNH TOÁN CLIENT FPS ---
+    frameCount++;
+    const nowTime = performance.now();
+    if (nowTime - lastFpsTime >= 1000) { 
+      clientFps = frameCount;
+      frameCount = 0;
+      lastFpsTime = nowTime;
+    }
 
-  let lastBBox = null;
-  let lastCropTime = 0;
-  let isPredicting = false; // Cờ kiểm tra xem có đang gửi request không
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-  function doPredict() {
-    if (isPredicting) return;
-    isPredicting = true;
+    // --- VẼ THÔNG SỐ LÊN MÀN HÌNH (GÓC TRÊN TRÁI) ---
+    // Vẽ nền mờ để dễ đọc chữ hơn
+    overlayCtx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    overlayCtx.fillRect(5, 5, 200, 110);
 
-    const now = Date.now();
-    const canvas = document.createElement('canvas');
-    // Mẹo: Bạn có thể scale nhỏ canvas width/height ở đây (ví dụ 320x240) 
-    // để model AI chạy nhanh hơn nếu AI của bạn hỗ trợ ảnh nhỏ.
-    canvas.width = video.videoWidth; 
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    // In Client FPS
+    overlayCtx.fillStyle = "yellow"; 
+    overlayCtx.font = "bold 16px Arial";
+    overlayCtx.fillText(`Client FPS: ${clientFps}`, 15, 25);
+    
+    // In Server Stats (Nếu đã nhận được dữ liệu)
+    if (serverLatency > 0) {
+      overlayCtx.fillStyle = "#00FFFF"; // Màu Cyan
+      overlayCtx.fillText(`Server FPS: ${serverFps}`, 15, 50);
+      overlayCtx.fillStyle = "#00FF00"; // Màu Xanh lá
+      overlayCtx.fillText(`Server RAM: ${serverRam} MB`, 15, 75);
+      overlayCtx.fillStyle = "#FF9900"; // Màu Cam
+      overlayCtx.fillText(`Độ trễ: ${serverLatency} ms`, 15, 100);
+    }
+    // -----------------------------------------------
 
+    if (results.detections.length > 0) {
+      const detection = results.detections[0];
+      const bbox = detection.boundingBox;
+
+      // Tính tọa độ pixel thực tế
+      const x = bbox.xCenter * overlay.width - (bbox.width * overlay.width) / 2;
+      const y = bbox.yCenter * overlay.height - (bbox.height * overlay.height) / 2;
+      const w = bbox.width * overlay.width;
+      const h = bbox.height * overlay.height;
+
+      // Cập nhật lastBBox để dùng cho chức năng Register
+      lastBBox = { width: w, height: h, x: x, y: y };
+
+      // Vẽ khung xanh cực mượt
+      overlayCtx.strokeStyle = "lime";
+      overlayCtx.lineWidth = 3;
+      overlayCtx.strokeRect(x, y, w, h);
+
+      // Cắt mặt và lưu vào currentFaceImage
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = w;
+      cropCanvas.height = h;
+      const cropCtx = cropCanvas.getContext('2d');
+      cropCtx.drawImage(results.image, x, y, w, h, 0, 0, w, h);
+      currentFaceImage = cropCanvas.toDataURL("image/jpeg", 0.8); // Nén ảnh crop
+
+      // Gọi server để nhận diện tên (1 giây/lần để tránh spam server)
+      const now = Date.now();
+      if (now - lastRecognizeTime > 1000) {
+        lastRecognizeTime = now;
+        
+        // Hiển thị ảnh crop sang thẻ img
+        if (croppedImage) croppedImage.src = currentFaceImage;
+
+        doPredict(currentFaceImage);
+      }
+    } else {
+      // Không thấy mặt
+      lastBBox = null;
+      currentFaceImage = null;
+      currentName = "No face";
+      labelResult.textContent = currentName;
+    }
+  });
+
+  // Hàm gọi API /predict nhận diện
+  function doPredict(base64Face) {
     const formData = new FormData();
-    // Nén JPEG xuống 70% chất lượng để gửi qua HTTP siêu nhanh
-    formData.append("image", canvas.toDataURL("image/jpeg", 0.7)); 
-
-    // Kiểm tra xem đã đến lúc cần lấy ảnh crop chưa (2s một lần)
-    const needCrop = (now - lastCropTime > 2000);
-    formData.append("need_crop", needCrop);
+    formData.append("image", base64Face);
 
     fetch('/predict', {
       method: 'POST',
@@ -66,48 +135,45 @@ window.addEventListener('DOMContentLoaded', () => {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          // 1. Chỉ vẽ khung (không cần load lại ảnh từ server)
-          const x = data.x;
-          const y = data.y;
-          const w = data.width;
-          const h = data.height;
-
-          lastBBox = { width: w, height: h };
-          overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
-
-          overlayCtx.lineWidth = 2; // Tăng độ dày cho dễ nhìn
-          overlayCtx.strokeStyle = "lime";
-          overlayCtx.strokeRect(x, y, w, h);
-
-          // 2. Cập nhật label
+          // 1. Cập nhật tên và độ chính xác
           if (data.label === "Unknown") {
-            labelResult.textContent = `Name: ${data.label}`;
+            currentName = "Unknown";
+            labelResult.textContent = "Name: Unknown";
           } else {
+            currentName = `${data.label} (${data.distance.toFixed(4)})`;
             labelResult.textContent = `Name: ${data.label} (Khoảng cách: ${data.distance.toFixed(4)})`;
           }
 
-          // 3. Cập nhật ảnh crop nếu server có trả về
-          if (needCrop && data.crop) {
-            croppedImage.src = data.crop;
-            lastCropTime = Date.now(); // Reset lại thời gian
+          // 2. Cập nhật thông số Server để hàm onResults vẽ lên màn hình
+          if (data.stats) {
+            serverRam = data.stats.backend_ram_mb;
+            serverFps = data.stats.backend_fps;
+            serverLatency = data.stats.inference_time_ms;
           }
-        } 
-        else if (data.label === "No face") {
-          overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
-          labelResult.textContent = `${data.label}`;
         }
       })
-      .catch(err => console.error("Lỗi khi gọi /predict:", err))
-      .finally(() => {
-        isPredicting = false;
-        // Chỉ gửi request tiếp theo sau khi request này đã hoàn thành
-        // Đợi thêm khoảng 100ms - 200ms để giảm tải cho CPU
-        setTimeout(doPredict, 150); 
-      });
+      .catch(err => console.error("Lỗi khi gọi /predict:", err));
   }
 
-  // Bắt đầu vòng lặp thay vì dùng setInterval
-  doPredict();
+  // Khởi động Camera qua MediaPipe
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      // Mỗi khi có frame mới, resize canvas overlay cho khớp và đưa frame vào MediaPipe
+      if (overlay.width !== video.videoWidth) {
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+      }
+      await faceDetection.send({ image: video });
+    },
+    width: 640,
+    height: 480
+  });
+  camera.start().catch(err => {
+    console.error("Lỗi khi mở camera:", err);
+    alert(`Không thể mở camera. Vui lòng kiểm tra quyền truy cập và thử lại.\nChi tiết: ${err.message}`);
+  });
+
+  // ================= PHẦN REGISTER GIỮ NGUYÊN LOGIC GIAO DIỆN =================
 
   // Nút Register
   registerBtn.addEventListener('click', () => {
