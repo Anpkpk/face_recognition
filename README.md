@@ -25,26 +25,19 @@ Advantages:
 
 ## 📦 Installation
 
-Clone the repository:
-
-```bash
-git clone https://github.com/Anpkpk/face_recognition.git
-cd face_recognition
-```
-
 Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 ---
-
+    
 ## ▶️ Usage
 
 Run the main application:
 
 ```bash
-python -m src.main
+python -m src.flask_app
 ```
 
 
